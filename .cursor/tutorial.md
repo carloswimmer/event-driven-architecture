@@ -1,8 +1,8 @@
 # Event-Driven Architecture — Manual Implementation Tutorial
 
-> **Goal:** Build the full payment/order flow from the architecture diagram using NestJS + Fastify, RabbitMQ (point-to-point), and Kafka (pub/sub) — entirely by hand, one checkbox at a time.
+> **Goal:** Build the full payment/order flow from the architecture diagram using NestJS + Fastify, `@nestjs/microservices`, `nest-cli`, RabbitMQ (point-to-point), and Kafka (pub/sub) — entirely by hand, one checkbox at a time.
 
-**Stack:** Node.js 20+, TypeScript, NestJS with Fastify adapter, pnpm workspaces monorepo, mock Stripe/SendGrid.
+**Stack:** Node.js 20+, TypeScript, NestJS with Fastify adapter, `@nestjs/microservices`, nest-cli monorepo, pnpm workspaces, mock Stripe/SendGrid.
 
 **How to use this tutorial:**
 
@@ -20,6 +20,7 @@
 |-------|-------|------|
 | [0](#phase-0--verify-messaging-infrastructure) | Verify messaging infrastructure | ~15 min |
 | [1](#phase-1--monorepo-scaffolding) | Monorepo scaffolding | ~20 min |
+| [1.5](#phase-15--nest-cli--nestjsmicroservices-foundation) | Nest CLI & `@nestjs/microservices` | ~25 min |
 | [2](#phase-2--shared-nestjs-patterns) | Shared NestJS patterns | ~10 min |
 | [3](#phase-3--mock-stripe-service) | Mock Stripe service | ~25 min |
 | [4](#phase-4--mock-sendgrid-service) | Mock SendGrid service | ~15 min |
@@ -40,6 +41,7 @@
 - **Docker Desktop** running (macOS/Windows/Linux)
 - **Node.js 20+** — verify: `node -v` → `v20.x.x` or higher
 - **pnpm 9+** — enable via Corepack (ships with Node 20): `corepack enable` — verify: `pnpm -v` → `9.x.x` or higher
+- **Nest CLI** — via `npx nest` (uses `@nestjs/cli` from root `devDependencies`, see [Phase 1.5](#phase-15--nest-cli--nestjsmicroservices-foundation)) — verify: `npx nest --version`
 - **curl** — for HTTP/SSE testing
 - Repository cloned at `event-driven-architecture/`
 
@@ -101,6 +103,7 @@ Define names once in `@eda/contracts` (`ROUTING_KEYS`, `TOPICS`) — never hardc
 event-driven-architecture/
 ├── .cursor/tutorial.md
 ├── package.json
+├── nest-cli.json          # monorepo registry — projects added incrementally
 ├── tsconfig.base.json
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
@@ -188,7 +191,7 @@ Topics are created by `infra/kafka/init-topics.sh`. Auto-create is **disabled** 
 
 ### Step 0.5 — Verify from CLI (optional)
 
-- [ ] List Kafka topics:
+- [x] List Kafka topics:
 
 ```bash
 docker exec eda-kafka /opt/kafka/bin/kafka-topics.sh \
@@ -402,7 +405,7 @@ export * from './events/invoice-created';
 
 ### Step 1.4 — Install and build
 
-- [ ] From the repository root:
+- [x] From the repository root:
 
 ```bash
 pnpm install
@@ -425,13 +428,200 @@ git commit -m "feat: add monorepo scaffolding and shared event contracts"
 
 ---
 
+## Phase 1.5 — Nest CLI & `@nestjs/microservices` foundation
+
+**Goal:** Install microservice transport dependencies, create an empty Nest monorepo skeleton, and learn the `@nestjs/microservices` patterns used in Phases 3–10. **Projects are registered in `nest-cli.json` incrementally** — only when you implement each app (Phase 3 adds `stripe-mock`, Phase 5 adds `api-gateway`, etc.).
+
+### Step 1.5.1 — Verify Nest CLI (`npx nest`)
+
+The CLI is already listed in root `devDependencies` (Phase 1). Use `npx nest` — no global install needed.
+
+- [x] From the repository root:
+
+```bash
+pnpm install
+npx nest --version
+```
+
+**Expected:** Prints `@nestjs/cli` version (10.x), resolved from local `node_modules`.
+
+### Step 1.5.2 — Add microservice dependencies to root
+
+- [x] Update root `package.json` — add these to `devDependencies` (shared across all Nest apps via pnpm hoisting):
+
+```json
+"@nestjs/microservices": "^10.4.15",
+"amqplib": "^0.10.5",
+"amqp-connection-manager": "^4.0.0",
+"kafkajs": "^2.2.4"
+```
+
+- [x] Run:
+
+```bash
+pnpm install
+```
+
+**Expected:** `node_modules` contains `@nestjs/microservices`, `amqplib`, and `kafkajs`.
+
+### Step 1.5.3 — Root `nest-cli.json` (empty monorepo skeleton)
+
+Per [Nest CLI workspaces](https://docs.nestjs.com/cli/monorepo), one root `nest-cli.json` holds the monorepo registry. Start with an **empty** `projects` object — you will add each app when you implement it.
+
+- [x] Create `nest-cli.json` at the repository root:
+
+```json
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "collection": "@nestjs/schematics",
+  "monorepo": true,
+  "root": ".",
+  "sourceRoot": "src",
+  "compilerOptions": {
+    "deleteOutDir": true
+  },
+  "projects": {}
+}
+```
+
+> **Do not** pre-register `api-gateway`, `payment`, etc. here. Each phase adds its own entry under `projects`.
+
+### Step 1.5.4 — How to register a project (repeat in every app phase)
+
+When you start a new app (mock or microservice), add an entry to `nest-cli.json` → `projects`:
+
+```json
+"<project-name>": {
+  "type": "application",
+  "root": "<path/to/app>",
+  "entryFile": "main",
+  "sourceRoot": "<path/to/app>/src",
+  "compilerOptions": {
+    "tsConfigPath": "<path/to/app>/tsconfig.json"
+  }
+}
+```
+
+**Example** — when you reach Phase 5 (`api-gateway`):
+
+```json
+"api-gateway": {
+  "type": "application",
+  "root": "services/api-gateway",
+  "entryFile": "main",
+  "sourceRoot": "services/api-gateway/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/api-gateway/tsconfig.json"
+  }
+}
+```
+
+If it is the **first** project registered in the monorepo, also update the top-level defaults:
+
+```json
+"root": "services/api-gateway",
+"sourceRoot": "services/api-gateway/src"
+```
+
+Individual per-app `nest-cli.json` files are **not** needed.
+
+### Step 1.5.5 — Microservice patterns used in this project
+
+| Pattern | When to use | Nest API |
+|---------|-------------|----------|
+| **Hybrid app** | HTTP + messaging (api-gateway, payment, analytics…) | `connectMicroservice()` + `startAllMicroservices()` + `listen()` |
+| **Fire-and-forget command/event** | RabbitMQ commands, Kafka events | `@EventPattern()` + `client.emit()` |
+| **Request/response** | Not used in this EDA flow | `@MessagePattern()` + `client.send()` |
+| **RabbitMQ manual ack** | Payment consumer (DLQ on failure) | `noAck: false` + `RmqContext.getChannelRef().ack/nack()` |
+| **Kafka consumer group** | One group per service | `consumer: { groupId: '…' }` in transport options |
+
+**RabbitMQ transport options** (match your `infra/rabbitmq/definitions.json`):
+
+```typescript
+{
+  transport: Transport.RMQ,
+  options: {
+    urls: [process.env.RABBITMQ_URL!],
+    queue: 'orders.payment.requested',
+    noAck: false,
+    prefetchCount: 1,
+    queueOptions: { durable: true },
+    wildcards: true,
+    exchange: 'eda.commands',
+    exchangeType: 'topic',
+  },
+}
+```
+
+**Kafka transport options:**
+
+```typescript
+{
+  transport: Transport.KAFKA,
+  options: {
+    client: { clientId: 'my-service', brokers: process.env.KAFKA_BROKERS!.split(',') },
+    consumer: { groupId: 'my-service' },
+    subscribe: { fromBeginning: false },
+  },
+}
+```
+
+### Step 1.5.6 — Nest CLI cheat sheet
+
+All commands use `npx nest` and run from the **repository root** (where `nest-cli.json` lives):
+
+```bash
+# Build / run a registered project (after you add it to nest-cli.json)
+npx nest build api-gateway
+npx nest start payment --watch
+npx nest start api-gateway --debug --watch
+
+# Scaffold inside a project (after src/main.ts exists)
+npx nest g module orders --project api-gateway --no-spec
+npx nest g controller orders --project api-gateway --no-spec
+npx nest g service orders --project api-gateway --no-spec
+npx nest g resource events --project analytics --no-spec
+```
+
+When running from inside a service directory (via `pnpm --filter`), pass the config path:
+
+```bash
+npx nest build api-gateway --config ../../nest-cli.json
+```
+
+### Step 1.5.7 — Verify CLI works
+
+- [x] Run:
+
+```bash
+npx nest --version
+```
+
+**Expected:** Prints CLI version. `nest-cli.json` exists with `"projects": {}`.
+
+### Checkpoint
+
+- `nest-cli.json` exists at repo root with an **empty** `projects` object.
+- `@nestjs/microservices`, `amqplib`, `amqp-connection-manager`, and `kafkajs` are installed.
+- You know how to register a project incrementally (Step 1.5.4) and use `npx nest`.
+- You understand hybrid apps, `@EventPattern`, and `client.emit()`.
+
+### Suggested commit
+
+```bash
+git add nest-cli.json package.json pnpm-lock.yaml
+git commit -m "feat: add Nest monorepo skeleton and microservices dependencies"
+```
+
+---
+
 ## Phase 2 — Shared NestJS patterns
 
 **Goal:** Create `@eda/shared` with utilities every service reuses: health check, idempotency store, env helper.
 
 ### Step 2.1 — Shared package scaffold
 
-- [ ] Create `packages/shared/package.json`:
+- [x] Create `packages/shared/package.json`:
 
 ```json
 {
@@ -450,7 +640,7 @@ git commit -m "feat: add monorepo scaffolding and shared event contracts"
 }
 ```
 
-- [ ] Create `packages/shared/tsconfig.json`:
+- [x] Create `packages/shared/tsconfig.json`:
 
 ```json
 {
@@ -542,11 +732,17 @@ pnpm --filter @eda/shared build
 
 | Convention | Detail |
 |------------|--------|
+| Monorepo CLI | Root `nest-cli.json` — register each app when you build it; run `npx nest build <project>` from repo root |
+| Dev server | `npx nest start <project> --watch` from repo root |
 | HTTP adapter | `NestFactory.create(AppModule, new FastifyAdapter())` |
+| Hybrid apps | `connectMicroservice()` before `startAllMicroservices()` + `listen()` |
+| Commands (RabbitMQ) | `@EventPattern(ROUTING_KEYS.…)` consumer; `client.emit()` producer |
+| Events (Kafka) | `@EventPattern(TOPICS.…)` consumer; `ClientKafkaProxy.emit()` producer |
+| Transport package | `@nestjs/microservices` (`Transport.RMQ`, `Transport.KAFKA`) |
 | Health | `GET /health` via `HealthController` |
 | Env vars | `requireEnv('VAR_NAME')` at startup |
 | Idempotency key | `orderNumber` for payment flow; `invoiceId` for invoice flow |
-| Kafka message key | Always `orderNumber` (matches partition routing in `infra/kafka/init-topics.sh`) |
+| Kafka message key | Always `orderNumber` in production; Nest `emit()` sends value only (partition routing is a production refinement) |
 | Consumer groups | One group per service: `api-gateway`, `payment-service`, etc. |
 
 ### Checkpoint
@@ -566,9 +762,30 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
 
 **Goal:** Simulate Stripe PaymentIntent creation and webhook delivery to the Payment Service.
 
-**Port:** `3001` | **Package:** `@eda/stripe-mock`
+**Port:** `3001` | **Package:** `@eda/stripe-mock` | **Nest project:** `stripe-mock`
 
-### Step 3.1 — Package scaffold
+### Step 3.1 — Register project and scaffold
+
+- [ ] Register `stripe-mock` in root `nest-cli.json` → `projects` (see [Step 1.5.4](#step-154--how-to-register-a-project-repeat-in-every-app-phase)):
+
+```json
+"stripe-mock": {
+  "type": "application",
+  "root": "mocks/stripe-mock",
+  "entryFile": "main",
+  "sourceRoot": "mocks/stripe-mock/src",
+  "compilerOptions": {
+    "tsConfigPath": "mocks/stripe-mock/tsconfig.json"
+  }
+}
+```
+
+- [ ] Set top-level defaults (first project in the monorepo):
+
+```json
+"root": "mocks/stripe-mock",
+"sourceRoot": "mocks/stripe-mock/src"
+```
 
 - [ ] Create `mocks/stripe-mock/package.json`:
 
@@ -578,9 +795,9 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build stripe-mock --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start stripe-mock --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/shared": "workspace:*",
@@ -603,19 +820,6 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
     "rootDir": "src"
   },
   "include": ["src/**/*"]
-}
-```
-
-- [ ] Create `mocks/stripe-mock/nest-cli.json`:
-
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
 }
 ```
 
@@ -766,7 +970,7 @@ Press `Ctrl+C` to stop.
 ### Suggested commit
 
 ```bash
-git add mocks/stripe-mock
+git add nest-cli.json mocks/stripe-mock
 git commit -m "feat: add mock Stripe service with webhook simulation"
 ```
 
@@ -776,9 +980,23 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 **Goal:** Simulate SendGrid email delivery API.
 
-**Port:** `3002` | **Package:** `@eda/sendgrid-mock`
+**Port:** `3002` | **Package:** `@eda/sendgrid-mock` | **Nest project:** `sendgrid-mock`
 
-### Step 4.1 — Package scaffold
+### Step 4.1 — Register project and scaffold
+
+- [ ] Register `sendgrid-mock` in root `nest-cli.json` → `projects`:
+
+```json
+"sendgrid-mock": {
+  "type": "application",
+  "root": "mocks/sendgrid-mock",
+  "entryFile": "main",
+  "sourceRoot": "mocks/sendgrid-mock/src",
+  "compilerOptions": {
+    "tsConfigPath": "mocks/sendgrid-mock/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `mocks/sendgrid-mock/package.json`:
 
@@ -788,9 +1006,9 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build sendgrid-mock --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start sendgrid-mock --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/shared": "workspace:*",
@@ -813,19 +1031,6 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
     "rootDir": "src"
   },
   "include": ["src/**/*"]
-}
-```
-
-- [ ] Create `mocks/sendgrid-mock/nest-cli.json`:
-
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
 }
 ```
 
@@ -928,7 +1133,7 @@ pnpm --filter @eda/sendgrid-mock build
 ### Suggested commit
 
 ```bash
-git add mocks/sendgrid-mock
+git add nest-cli.json mocks/sendgrid-mock
 git commit -m "feat: add mock SendGrid email service"
 ```
 
@@ -936,13 +1141,27 @@ git commit -m "feat: add mock SendGrid email service"
 
 ## Phase 5 — API Gateway / Order Service
 
-**Goal:** HTTP entry point — reserve product, publish `orders.payment.requested`, stream SSE when payment succeeds.
+**Goal:** HTTP entry point — reserve product, publish `orders.payment.requested`, stream SSE when payment succeeds. Uses a **hybrid app** (HTTP + Kafka consumer) and `ClientsModule` for RabbitMQ publishing.
 
-**Port:** `3000` | **Package:** `@eda/api-gateway`
+**Port:** `3000` | **Package:** `@eda/api-gateway` | **Nest project:** `api-gateway`
 
-### Step 5.1 — Package scaffold
+### Step 5.1 — Register project and scaffold with nest-cli
 
-- [ ] Create `services/api-gateway/package.json`:
+- [ ] Register `api-gateway` in root `nest-cli.json` → `projects`:
+
+```json
+"api-gateway": {
+  "type": "application",
+  "root": "services/api-gateway",
+  "entryFile": "main",
+  "sourceRoot": "services/api-gateway/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/api-gateway/tsconfig.json"
+  }
+}
+```
+
+- [ ] Create the service directory and `package.json`:
 
 ```json
 {
@@ -950,16 +1169,18 @@ git commit -m "feat: add mock SendGrid email service"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build api-gateway --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start api-gateway --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
+    "amqp-connection-manager": "^4.0.0",
     "amqplib": "^0.10.5",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -981,20 +1202,47 @@ git commit -m "feat: add mock SendGrid email service"
 }
 ```
 
-- [ ] Create `services/api-gateway/nest-cli.json`:
+- [ ] Create minimal bootstrap files so `npx nest g` can scaffold into the project:
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/api-gateway/src
 ```
 
-### Step 5.2 — Order store and SSE
+- [ ] Create `services/api-gateway/src/app.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+
+@Module({})
+export class AppModule {}
+```
+
+- [ ] Create `services/api-gateway/src/main.ts`:
+
+```typescript
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  await NestFactory.create(AppModule);
+}
+bootstrap();
+```
+
+- [ ] Scaffold modules with `npx nest` (from **repository root**):
+
+```bash
+npx nest g module orders --project api-gateway --no-spec
+npx nest g service orders --project api-gateway --no-spec
+npx nest g controller orders --project api-gateway --no-spec
+npx nest g controller payment-events --project api-gateway --no-spec
+```
+
+**Expected:** Nest creates `orders.module.ts`, `orders.service.ts`, `orders.controller.ts`, and `payment-events.controller.ts` under `services/api-gateway/src/`.
+
+> **Note:** No per-service `nest-cli.json` — only the root registry, updated in this step.
+
+### Step 5.2 — Order store
 
 - [ ] Create `services/api-gateway/src/orders.store.ts`:
 
@@ -1041,92 +1289,58 @@ export class OrdersStore {
 }
 ```
 
-### Step 5.3 — RabbitMQ publisher
+### Step 5.3 — RabbitMQ publisher (`ClientsModule` + `emit`)
 
-- [ ] Create `services/api-gateway/src/rabbitmq.service.ts`:
+- [ ] Replace `services/api-gateway/src/orders.service.ts`:
 
 ```typescript
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { EXCHANGES, PaymentRequested, ROUTING_KEYS } from '@eda/contracts';
-import { requireEnv } from '@eda/shared';
-import * as amqp from 'amqplib';
+import { Inject, Injectable } from '@nestjs/common';
+import { ClientProxy } from '@nestjs/microservices';
+import { PaymentRequested, ROUTING_KEYS } from '@eda/contracts';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
-export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
-  private connection!: amqp.Connection;
-  private channel!: amqp.Channel;
-
-  async onModuleInit() {
-    const url = requireEnv('RABBITMQ_URL');
-    this.connection = await amqp.connect(url);
-    this.channel = await this.connection.createChannel();
-  }
+export class OrdersService {
+  constructor(
+    @Inject('RABBITMQ_COMMANDS') private readonly rabbitClient: ClientProxy,
+  ) {}
 
   async publishPaymentRequested(payload: PaymentRequested): Promise<void> {
-    const body = Buffer.from(JSON.stringify(payload));
-    const sent = this.channel.publish(
-      EXCHANGES.COMMANDS,
-      ROUTING_KEYS.PAYMENT_REQUESTED,
-      body,
-      { contentType: 'application/json', persistent: true },
+    await firstValueFrom(
+      this.rabbitClient.emit(ROUTING_KEYS.PAYMENT_REQUESTED, payload),
     );
-    if (!sent) {
-      throw new Error('Failed to publish orders.payment.requested — channel buffer full');
-    }
-  }
-
-  async onModuleDestroy() {
-    await this.channel?.close();
-    await this.connection?.close();
   }
 }
 ```
 
-### Step 5.4 — Kafka consumer (orders.payment.succeeded)
+### Step 5.4 — Kafka consumer (`@EventPattern`)
 
-- [ ] Create `services/api-gateway/src/kafka.consumer.ts`:
+- [ ] Replace `services/api-gateway/src/payment-events.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { PaymentSucceededSchema, TOPICS } from '@eda/contracts';
-import { requireEnv } from '@eda/shared';
-import { Kafka, Consumer } from 'kafkajs';
 import { OrdersStore } from './orders.store';
 
-@Injectable()
-export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private consumer!: Consumer;
+@Controller()
+export class PaymentEventsController {
+  private readonly logger = new Logger(PaymentEventsController.name);
 
   constructor(private readonly ordersStore: OrdersStore) {}
 
-  async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'api-gateway', brokers });
-    this.consumer = kafka.consumer({ groupId: 'api-gateway' });
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic: TOPICS.PAYMENT_SUCCEEDED, fromBeginning: false });
-
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const parsed = PaymentSucceededSchema.parse(JSON.parse(raw));
-        this.logger.log(`Payment succeeded for order ${parsed.orderNumber}`);
-        this.ordersStore.markPaid(parsed.orderNumber);
-      },
-    });
-  }
-
-  async onModuleDestroy() {
-    await this.consumer?.disconnect();
+  @EventPattern(TOPICS.PAYMENT_SUCCEEDED)
+  handlePaymentSucceeded(@Payload() payload: unknown) {
+    const event = PaymentSucceededSchema.parse(payload);
+    this.logger.log(`Payment succeeded for order ${event.orderNumber}`);
+    this.ordersStore.markPaid(event.orderNumber);
   }
 }
 ```
 
 ### Step 5.5 — HTTP controller
 
-- [ ] Create `services/api-gateway/src/orders.controller.ts`:
+- [ ] Replace `services/api-gateway/src/orders.controller.ts`:
 
 ```typescript
 import {
@@ -1141,13 +1355,13 @@ import {
 import { randomUUID } from 'crypto';
 import { Observable, map } from 'rxjs';
 import { OrdersStore } from './orders.store';
-import { RabbitMqService } from './rabbitmq.service';
+import { OrdersService } from './orders.service';
 
 @Controller('orders')
 export class OrdersController {
   constructor(
     private readonly ordersStore: OrdersStore,
-    private readonly rabbitMq: RabbitMqService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   @Post()
@@ -1166,7 +1380,7 @@ export class OrdersController {
       status: 'payment_pending',
     });
 
-    await this.rabbitMq.publishPaymentRequested({
+    await this.ordersService.publishPaymentRequested({
       reserveId,
       orderNumber,
       amount: body.amount,
@@ -1198,26 +1412,58 @@ export class OrdersController {
 }
 ```
 
-### Step 5.6 — App module and main
+### Step 5.6 — Wire modules (hybrid app)
 
-- [ ] Create `services/api-gateway/src/app.module.ts`:
+- [ ] Replace `services/api-gateway/src/orders.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { EXCHANGES } from '@eda/contracts';
+import { requireEnv } from '@eda/shared';
+import { OrdersController } from './orders.controller';
+import { OrdersService } from './orders.service';
+import { OrdersStore } from './orders.store';
+import { PaymentEventsController } from './payment-events.controller';
+
+@Module({
+  imports: [
+    ClientsModule.register([
+      {
+        name: 'RABBITMQ_COMMANDS',
+        transport: Transport.RMQ,
+        options: {
+          urls: [requireEnv('RABBITMQ_URL')],
+          queue: 'orders.payment.requested',
+          queueOptions: { durable: true },
+          wildcards: true,
+          exchange: EXCHANGES.COMMANDS,
+          exchangeType: 'topic',
+        },
+      },
+    ]),
+  ],
+  controllers: [OrdersController, PaymentEventsController],
+  providers: [OrdersStore, OrdersService],
+})
+export class OrdersModule {}
+```
+
+- [ ] Replace `services/api-gateway/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
 import { HealthController } from '@eda/shared';
-import { OrdersController } from './orders.controller';
-import { OrdersStore } from './orders.store';
-import { RabbitMqService } from './rabbitmq.service';
-import { KafkaConsumerService } from './kafka.consumer';
+import { OrdersModule } from './orders.module';
 
 @Module({
-  controllers: [HealthController, OrdersController],
-  providers: [OrdersStore, RabbitMqService, KafkaConsumerService],
+  imports: [OrdersModule],
+  controllers: [HealthController],
 })
 export class AppModule {}
 ```
 
-- [ ] Create `services/api-gateway/src/main.ts`:
+- [ ] Replace `services/api-gateway/src/main.ts` (hybrid HTTP + Kafka):
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
@@ -1225,13 +1471,29 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
+import { requireEnv } from '@eda/shared';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'api-gateway',
+        brokers: requireEnv('KAFKA_BROKERS').split(','),
+      },
+      consumer: { groupId: 'api-gateway' },
+      subscribe: { fromBeginning: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
   console.log(`api-gateway listening on ${port}`);
@@ -1245,36 +1507,50 @@ bootstrap().catch((err) => {
 
 ### Step 5.7 — Build
 
-- [ ] Run:
+- [ ] From the **repository root**:
 
 ```bash
 pnpm install
-pnpm --filter @eda/api-gateway build
+npx nest build api-gateway
 ```
 
 **Expected:** Build succeeds.
 
 ### Checkpoint
 
-- `@eda/api-gateway` builds.
-- You understand the flow: `POST /orders` → RabbitMQ publish; Kafka consumer → SSE push.
+- `@eda/api-gateway` builds via `npx nest build api-gateway`.
+- Flow: `POST /orders` → `client.emit()` to RabbitMQ; `@EventPattern` Kafka handler → SSE push.
 
 ### Suggested commit
 
 ```bash
-git add services/api-gateway
-git commit -m "feat: add api-gateway with RabbitMQ publish and Kafka SSE"
+git add nest-cli.json services/api-gateway
+git commit -m "feat: add api-gateway with Nest microservices hybrid app"
 ```
 
 ---
 
 ## Phase 6 — Payment Service
 
-**Goal:** Consume `orders.payment.requested` from RabbitMQ, call Stripe mock, publish `orders.payment.succeeded` to Kafka on webhook.
+**Goal:** Consume `orders.payment.requested` from RabbitMQ, call Stripe mock, publish `orders.payment.succeeded` to Kafka on webhook. Uses a **hybrid app** (RabbitMQ consumer + HTTP webhook).
 
-**Port:** `3010` | **Package:** `@eda/payment`
+**Port:** `3010` | **Package:** `@eda/payment` | **Nest project:** `payment`
 
-### Step 6.1 — Package scaffold
+### Step 6.1 — Register project and scaffold with nest-cli
+
+- [ ] Register `payment` in root `nest-cli.json` → `projects`:
+
+```json
+"payment": {
+  "type": "application",
+  "root": "services/payment",
+  "entryFile": "main",
+  "sourceRoot": "services/payment/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/payment/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `services/payment/package.json`:
 
@@ -1284,16 +1560,18 @@ git commit -m "feat: add api-gateway with RabbitMQ publish and Kafka SSE"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build payment --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start payment --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
+    "amqp-connection-manager": "^4.0.0",
     "amqplib": "^0.10.5",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -1315,139 +1593,129 @@ git commit -m "feat: add api-gateway with RabbitMQ publish and Kafka SSE"
 }
 ```
 
-- [ ] Create `services/payment/nest-cli.json`:
+- [ ] Bootstrap and scaffold (from **repository root**):
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/payment/src
 ```
 
-### Step 6.2 — Kafka producer
+Create minimal `services/payment/src/app.module.ts` and `main.ts` (same stub pattern as Phase 5), then:
 
-- [ ] Create `services/payment/src/kafka.producer.ts`:
+```bash
+npx nest g module payment --project payment --no-spec
+npx nest g controller payment-consumer --project payment --no-spec
+npx nest g controller webhooks --project payment --no-spec
+npx nest g service kafka-producer --project payment --no-spec
+```
+
+### Step 6.2 — Kafka producer (`ClientKafkaProxy`)
+
+- [ ] Replace `services/payment/src/kafka-producer.service.ts`:
 
 ```typescript
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
 import { PaymentSucceeded, TOPICS } from '@eda/contracts';
-import { requireEnv } from '@eda/shared';
-import { Kafka, Producer } from 'kafkajs';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
-  private producer!: Producer;
+  constructor(
+    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafkaProxy,
+  ) {}
 
   async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'payment-service', brokers });
-    this.producer = kafka.producer();
-    await this.producer.connect();
+    await (this.kafka as ClientKafka).connect();
   }
 
   async publishPaymentSucceeded(event: PaymentSucceeded): Promise<void> {
-    await this.producer.send({
-      topic: TOPICS.PAYMENT_SUCCEEDED,
-      messages: [
-        {
-          key: event.orderNumber,
-          value: JSON.stringify(event),
-        },
-      ],
-    });
+    await firstValueFrom(this.kafka.emit(TOPICS.PAYMENT_SUCCEEDED, event));
   }
 
   async onModuleDestroy() {
-    await this.producer?.disconnect();
+    await (this.kafka as ClientKafka).close();
   }
 }
 ```
 
-### Step 6.3 — RabbitMQ consumer
+### Step 6.3 — RabbitMQ consumer (`@EventPattern` + manual ack)
 
-- [ ] Create `services/payment/src/rabbitmq.consumer.ts`:
+- [ ] Replace `services/payment/src/payment-consumer.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PaymentRequestedSchema } from '@eda/contracts';
+import { Controller, Logger } from '@nestjs/common';
+import {
+  Ctx,
+  EventPattern,
+  Payload,
+  RmqContext,
+} from '@nestjs/microservices';
+import { PaymentRequestedSchema, ROUTING_KEYS } from '@eda/contracts';
 import { IdempotencyStore, requireEnv } from '@eda/shared';
-import * as amqp from 'amqplib';
 
-@Injectable()
-export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(RabbitMqConsumerService.name);
-  private connection!: amqp.Connection;
-  private channel!: amqp.Channel;
+@Controller()
+export class PaymentConsumerController {
+  private readonly logger = new Logger(PaymentConsumerController.name);
 
-  constructor(
-    private readonly idempotency: IdempotencyStore,
-  ) {}
+  constructor(private readonly idempotency: IdempotencyStore) {}
 
-  async onModuleInit() {
-    const url = requireEnv('RABBITMQ_URL');
+  @EventPattern(ROUTING_KEYS.PAYMENT_REQUESTED)
+  async handlePaymentRequested(
+    @Payload() payload: unknown,
+    @Ctx() context: RmqContext,
+  ) {
+    const channel = context.getChannelRef();
+    const msg = context.getMessage();
     const stripeMockUrl = requireEnv('STRIPE_MOCK_URL');
 
-    this.connection = await amqp.connect(url);
-    this.channel = await this.connection.createChannel();
-    await this.channel.prefetch(1);
+    try {
+      const data = PaymentRequestedSchema.parse(payload);
 
-    await this.channel.consume('orders.payment.requested', async (msg) => {
-      if (!msg) return;
-      try {
-        const payload = PaymentRequestedSchema.parse(
-          JSON.parse(msg.content.toString()),
-        );
-
-        if (this.idempotency.isDuplicate(payload.orderNumber)) {
-          this.logger.warn(`Duplicate orders.payment.requested: ${payload.orderNumber}`);
-          this.channel.ack(msg);
-          return;
-        }
-
-        this.logger.log(`Processing payment for order ${payload.orderNumber}`);
-
-        const response = await fetch(`${stripeMockUrl}/v1/payment-intents`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            orderNumber: payload.orderNumber,
-            amount: payload.amount,
-            reserveId: payload.reserveId,
-            customerEmail: payload.customerEmail,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Stripe mock returned HTTP ${response.status}`);
-        }
-
-        this.idempotency.markProcessed(payload.orderNumber);
-        this.channel.ack(msg);
-      } catch (err) {
-        this.logger.error('Failed to process orders.payment.requested', err);
-        this.channel.nack(msg, false, false);
+      if (this.idempotency.isDuplicate(data.orderNumber)) {
+        this.logger.warn(`Duplicate orders.payment.requested: ${data.orderNumber}`);
+        channel.ack(msg);
+        return;
       }
-    });
-  }
 
-  async onModuleDestroy() {
-    await this.channel?.close();
-    await this.connection?.close();
+      this.logger.log(`Processing payment for order ${data.orderNumber}`);
+
+      const response = await fetch(`${stripeMockUrl}/v1/payment-intents`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          orderNumber: data.orderNumber,
+          amount: data.amount,
+          reserveId: data.reserveId,
+          customerEmail: data.customerEmail,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Stripe mock returned HTTP ${response.status}`);
+      }
+
+      this.idempotency.markProcessed(data.orderNumber);
+      channel.ack(msg);
+    } catch (err) {
+      this.logger.error('Failed to process orders.payment.requested', err);
+      channel.nack(msg, false, false);
+    }
   }
 }
 ```
 
 ### Step 6.4 — Stripe webhook controller
 
-- [ ] Create `services/payment/src/webhooks.controller.ts`:
+- [ ] Replace `services/payment/src/webhooks.controller.ts`:
 
 ```typescript
 import { Body, Controller, Post } from '@nestjs/common';
-import { KafkaProducerService } from './kafka.producer';
+import { KafkaProducerService } from './kafka-producer.service';
 
 @Controller('webhooks')
 export class WebhooksController {
@@ -1482,29 +1750,55 @@ export class WebhooksController {
 }
 ```
 
-### Step 6.5 — App module and main
+### Step 6.5 — Wire modules (hybrid app)
 
-- [ ] Create `services/payment/src/app.module.ts`:
+- [ ] Replace `services/payment/src/payment.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HealthController, IdempotencyStore } from '@eda/shared';
-import { KafkaProducerService } from './kafka.producer';
-import { RabbitMqConsumerService } from './rabbitmq.consumer';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { IdempotencyStore, requireEnv } from '@eda/shared';
+import { PaymentConsumerController } from './payment-consumer.controller';
 import { WebhooksController } from './webhooks.controller';
+import { KafkaProducerService } from './kafka-producer.service';
 
 @Module({
-  controllers: [HealthController, WebhooksController],
-  providers: [
-    IdempotencyStore,
-    KafkaProducerService,
-    RabbitMqConsumerService,
+  imports: [
+    ClientsModule.register([
+      {
+        name: 'KAFKA_SERVICE',
+        transport: Transport.KAFKA,
+        options: {
+          client: {
+            clientId: 'payment-service',
+            brokers: requireEnv('KAFKA_BROKERS').split(','),
+          },
+          producer: { allowAutoTopicCreation: false },
+        },
+      },
+    ]),
   ],
+  controllers: [PaymentConsumerController, WebhooksController],
+  providers: [IdempotencyStore, KafkaProducerService],
+})
+export class PaymentModule {}
+```
+
+- [ ] Replace `services/payment/src/app.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { HealthController } from '@eda/shared';
+import { PaymentModule } from './payment.module';
+
+@Module({
+  imports: [PaymentModule],
+  controllers: [HealthController],
 })
 export class AppModule {}
 ```
 
-- [ ] Create `services/payment/src/main.ts`:
+- [ ] Replace `services/payment/src/main.ts`:
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
@@ -1512,6 +1806,9 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { EXCHANGES } from '@eda/contracts';
+import { requireEnv } from '@eda/shared';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -1519,6 +1816,22 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [requireEnv('RABBITMQ_URL')],
+      queue: 'orders.payment.requested',
+      noAck: false,
+      prefetchCount: 1,
+      queueOptions: { durable: true },
+      wildcards: true,
+      exchange: EXCHANGES.COMMANDS,
+      exchangeType: 'topic',
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3010);
   await app.listen(port, '0.0.0.0');
   console.log(`payment-service listening on ${port}`);
@@ -1532,35 +1845,49 @@ bootstrap().catch((err) => {
 
 ### Step 6.6 — Build
 
-- [ ] Run:
+- [ ] From the **repository root**:
 
 ```bash
-pnpm --filter @eda/payment build
+npx nest build payment
 ```
 
 **Expected:** Build succeeds.
 
 ### Checkpoint
 
-- Payment service builds.
-- Flow: RabbitMQ consume → Stripe mock → webhook → Kafka publish.
+- Payment service builds via `npx nest build payment`.
+- Flow: `@EventPattern` RabbitMQ consume → Stripe mock → webhook → `kafka.emit()`.
 
 ### Suggested commit
 
 ```bash
-git add services/payment
-git commit -m "feat: add payment service with RabbitMQ consumer and Kafka producer"
+git add nest-cli.json services/payment
+git commit -m "feat: add payment service with Nest hybrid RMQ consumer and Kafka producer"
 ```
 
 ---
 
 ## Phase 7 — Availability Service
 
-**Goal:** Consume `orders.payment.succeeded` and decrement mock inventory.
+**Goal:** Consume `orders.payment.succeeded` and decrement mock inventory. Hybrid app (HTTP health + Kafka consumer).
 
-**Port:** `3020` | **Package:** `@eda/availability`
+**Port:** `3020` | **Package:** `@eda/availability` | **Nest project:** `availability`
 
-### Step 7.1 — Package scaffold
+### Step 7.1 — Register project and scaffold with nest-cli
+
+- [ ] Register `availability` in root `nest-cli.json` → `projects`:
+
+```json
+"availability": {
+  "type": "application",
+  "root": "services/availability",
+  "entryFile": "main",
+  "sourceRoot": "services/availability/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/availability/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `services/availability/package.json`:
 
@@ -1570,15 +1897,16 @@ git commit -m "feat: add payment service with RabbitMQ consumer and Kafka produc
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build availability --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start availability --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -1600,29 +1928,30 @@ git commit -m "feat: add payment service with RabbitMQ consumer and Kafka produc
 }
 ```
 
-- [ ] Create `services/availability/nest-cli.json`:
+- [ ] Bootstrap and scaffold (from **repository root**):
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/availability/src
 ```
 
-### Step 7.2 — Inventory store and Kafka consumer
+Create minimal `app.module.ts` and `main.ts`, then:
 
-- [ ] Create `services/availability/src/inventory.store.ts`:
+```bash
+npx nest g module availability --project availability --no-spec
+npx nest g controller payment-events --project availability --no-spec
+npx nest g service inventory --project availability --no-spec
+```
+
+### Step 7.2 — Inventory store
+
+- [ ] Replace `services/availability/src/inventory.service.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
-export class InventoryStore {
-  private readonly logger = new Logger(InventoryStore.name);
+export class InventoryService {
+  private readonly logger = new Logger(InventoryService.name);
   private stock = 100;
 
   confirmReservation(reserveId: string): void {
@@ -1634,66 +1963,68 @@ export class InventoryStore {
 }
 ```
 
-- [ ] Create `services/availability/src/kafka.consumer.ts`:
+### Step 7.3 — Kafka consumer (`@EventPattern`)
+
+- [ ] Replace `services/availability/src/payment-events.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { PaymentSucceededSchema, TOPICS } from '@eda/contracts';
-import { IdempotencyStore, requireEnv } from '@eda/shared';
-import { Kafka, Consumer } from 'kafkajs';
-import { InventoryStore } from './inventory.store';
+import { IdempotencyStore } from '@eda/shared';
+import { InventoryService } from './inventory.service';
 
-@Injectable()
-export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private consumer!: Consumer;
+@Controller()
+export class PaymentEventsController {
+  private readonly logger = new Logger(PaymentEventsController.name);
 
   constructor(
     private readonly idempotency: IdempotencyStore,
-    private readonly inventory: InventoryStore,
+    private readonly inventory: InventoryService,
   ) {}
 
-  async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'availability-service', brokers });
-    this.consumer = kafka.consumer({ groupId: 'availability-service' });
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic: TOPICS.PAYMENT_SUCCEEDED, fromBeginning: false });
+  @EventPattern(TOPICS.PAYMENT_SUCCEEDED)
+  handlePaymentSucceeded(@Payload() payload: unknown) {
+    const event = PaymentSucceededSchema.parse(payload);
 
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const event = PaymentSucceededSchema.parse(JSON.parse(raw));
+    if (this.idempotency.isDuplicate(event.orderNumber)) {
+      this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
+      return;
+    }
 
-        if (this.idempotency.isDuplicate(event.orderNumber)) {
-          this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
-          return;
-        }
-
-        this.inventory.confirmReservation(event.reserveId);
-        this.idempotency.markProcessed(event.orderNumber);
-      },
-    });
-  }
-
-  async onModuleDestroy() {
-    await this.consumer?.disconnect();
+    this.inventory.confirmReservation(event.reserveId);
+    this.idempotency.markProcessed(event.orderNumber);
   }
 }
+```
+
+### Step 7.4 — Wire modules and hybrid main
+
+- [ ] Replace `services/availability/src/availability.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { IdempotencyStore } from '@eda/shared';
+import { InventoryService } from './inventory.service';
+import { PaymentEventsController } from './payment-events.controller';
+
+@Module({
+  controllers: [PaymentEventsController],
+  providers: [IdempotencyStore, InventoryService],
+})
+export class AvailabilityModule {}
 ```
 
 - [ ] Create `services/availability/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HealthController, IdempotencyStore } from '@eda/shared';
-import { InventoryStore } from './inventory.store';
-import { KafkaConsumerService } from './kafka.consumer';
+import { HealthController } from '@eda/shared';
+import { AvailabilityModule } from './availability.module';
 
 @Module({
+  imports: [AvailabilityModule],
   controllers: [HealthController],
-  providers: [IdempotencyStore, InventoryStore, KafkaConsumerService],
 })
 export class AppModule {}
 ```
@@ -1706,6 +2037,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { requireEnv } from '@eda/shared';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -1713,6 +2046,20 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'availability-service',
+        brokers: requireEnv('KAFKA_BROKERS').split(','),
+      },
+      consumer: { groupId: 'availability-service' },
+      subscribe: { fromBeginning: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3020);
   await app.listen(port, '0.0.0.0');
   console.log(`availability-service listening on ${port}`);
@@ -1724,36 +2071,50 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 7.3 — Build
+### Step 7.5 — Build
 
-- [ ] Run:
+- [ ] From the **repository root**:
 
 ```bash
-pnpm --filter @eda/availability build
+npx nest build availability
 ```
 
 **Expected:** Build succeeds.
 
 ### Checkpoint
 
-- Availability service builds and subscribes to `orders.payment.succeeded`.
+- Availability service builds and subscribes to `orders.payment.succeeded` via `@EventPattern`.
 
 ### Suggested commit
 
 ```bash
-git add services/availability
-git commit -m "feat: add availability service consuming orders.payment.succeeded"
+git add nest-cli.json services/availability
+git commit -m "feat: add availability service with Nest Kafka consumer"
 ```
 
 ---
 
 ## Phase 8 — Analytics Service
 
-**Goal:** Consume both `orders.payment.succeeded` and `billing.invoice.created`; expose events for debugging.
+**Goal:** Consume both `orders.payment.succeeded` and `billing.invoice.created`; expose events for debugging. Hybrid app with two `@EventPattern` handlers on one Kafka consumer group.
 
-**Port:** `3030` | **Package:** `@eda/analytics`
+**Port:** `3030` | **Package:** `@eda/analytics` | **Nest project:** `analytics`
 
-### Step 8.1 — Package scaffold
+### Step 8.1 — Register project and scaffold with nest-cli
+
+- [ ] Register `analytics` in root `nest-cli.json` → `projects`:
+
+```json
+"analytics": {
+  "type": "application",
+  "root": "services/analytics",
+  "entryFile": "main",
+  "sourceRoot": "services/analytics/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/analytics/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `services/analytics/package.json`:
 
@@ -1763,15 +2124,16 @@ git commit -m "feat: add availability service consuming orders.payment.succeeded
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build analytics --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start analytics --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -1793,28 +2155,30 @@ git commit -m "feat: add availability service consuming orders.payment.succeeded
 }
 ```
 
-- [ ] Create `services/analytics/nest-cli.json`:
+- [ ] Bootstrap and scaffold (from **repository root**):
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/analytics/src
 ```
 
-### Step 8.2 — Event store and consumers
+Create minimal `app.module.ts` and `main.ts`, then:
 
-- [ ] Create `services/analytics/src/events.store.ts`:
+```bash
+npx nest g module analytics --project analytics --no-spec
+npx nest g controller events --project analytics --no-spec
+npx nest g controller kafka-events --project analytics --no-spec
+npx nest g service events --project analytics --no-spec
+```
+
+### Step 8.2 — Event store and HTTP controller
+
+- [ ] Replace `services/analytics/src/events.service.ts`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
-export class EventsStore {
+export class EventsService {
   private readonly events: Array<{ type: string; payload: unknown; at: string }> = [];
 
   append(type: string, payload: unknown): void {
@@ -1827,89 +2191,74 @@ export class EventsStore {
 }
 ```
 
-- [ ] Create `services/analytics/src/events.controller.ts`:
+- [ ] Replace `services/analytics/src/events.controller.ts`:
 
 ```typescript
 import { Controller, Get } from '@nestjs/common';
-import { EventsStore } from './events.store';
+import { EventsService } from './events.service';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly eventsStore: EventsStore) {}
+  constructor(private readonly eventsService: EventsService) {}
 
   @Get()
   list() {
-    return this.eventsStore.list();
+    return this.eventsService.list();
   }
 }
 ```
 
-- [ ] Create `services/analytics/src/kafka.consumer.ts`:
+### Step 8.3 — Kafka event handlers (`@EventPattern`)
+
+- [ ] Replace `services/analytics/src/kafka-events.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import {
   InvoiceCreatedSchema,
   PaymentSucceededSchema,
   TOPICS,
 } from '@eda/contracts';
-import { requireEnv } from '@eda/shared';
-import { Kafka, Consumer } from 'kafkajs';
-import { EventsStore } from './events.store';
+import { EventsService } from './events.service';
 
-@Injectable()
-export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private paymentConsumer!: Consumer;
-  private invoiceConsumer!: Consumer;
+@Controller()
+export class KafkaEventsController {
+  private readonly logger = new Logger(KafkaEventsController.name);
 
-  constructor(private readonly eventsStore: EventsStore) {}
+  constructor(private readonly eventsService: EventsService) {}
 
-  async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-
-    const kafkaPayment = new Kafka({ clientId: 'analytics-payment', brokers });
-    this.paymentConsumer = kafkaPayment.consumer({ groupId: 'analytics-service' });
-    await this.paymentConsumer.connect();
-    await this.paymentConsumer.subscribe({
-      topic: TOPICS.PAYMENT_SUCCEEDED,
-      fromBeginning: false,
-    });
-
-    await this.paymentConsumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const event = PaymentSucceededSchema.parse(JSON.parse(raw));
-        this.logger.log(`Recorded orders.payment.succeeded: ${event.orderNumber}`);
-        this.eventsStore.append('orders.payment.succeeded', event);
-      },
-    });
-
-    const kafkaInvoice = new Kafka({ clientId: 'analytics-invoice', brokers });
-    this.invoiceConsumer = kafkaInvoice.consumer({ groupId: 'analytics-service' });
-    await this.invoiceConsumer.connect();
-    await this.invoiceConsumer.subscribe({
-      topic: TOPICS.INVOICE_CREATED,
-      fromBeginning: false,
-    });
-
-    await this.invoiceConsumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const event = InvoiceCreatedSchema.parse(JSON.parse(raw));
-        this.logger.log(`Recorded billing.invoice.created: ${event.invoiceId}`);
-        this.eventsStore.append('billing.invoice.created', event);
-      },
-    });
+  @EventPattern(TOPICS.PAYMENT_SUCCEEDED)
+  handlePaymentSucceeded(@Payload() payload: unknown) {
+    const event = PaymentSucceededSchema.parse(payload);
+    this.logger.log(`Recorded orders.payment.succeeded: ${event.orderNumber}`);
+    this.eventsService.append('orders.payment.succeeded', event);
   }
 
-  async onModuleDestroy() {
-    await this.paymentConsumer?.disconnect();
-    await this.invoiceConsumer?.disconnect();
+  @EventPattern(TOPICS.INVOICE_CREATED)
+  handleInvoiceCreated(@Payload() payload: unknown) {
+    const event = InvoiceCreatedSchema.parse(payload);
+    this.logger.log(`Recorded billing.invoice.created: ${event.invoiceId}`);
+    this.eventsService.append('billing.invoice.created', event);
   }
 }
+```
+
+### Step 8.4 — Wire modules and hybrid main
+
+- [ ] Replace `services/analytics/src/analytics.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { EventsController } from './events.controller';
+import { EventsService } from './events.service';
+import { KafkaEventsController } from './kafka-events.controller';
+
+@Module({
+  controllers: [EventsController, KafkaEventsController],
+  providers: [EventsService],
+})
+export class AnalyticsModule {}
 ```
 
 - [ ] Create `services/analytics/src/app.module.ts`:
@@ -1917,13 +2266,11 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 ```typescript
 import { Module } from '@nestjs/common';
 import { HealthController } from '@eda/shared';
-import { EventsController } from './events.controller';
-import { EventsStore } from './events.store';
-import { KafkaConsumerService } from './kafka.consumer';
+import { AnalyticsModule } from './analytics.module';
 
 @Module({
-  controllers: [HealthController, EventsController],
-  providers: [EventsStore, KafkaConsumerService],
+  imports: [AnalyticsModule],
+  controllers: [HealthController],
 })
 export class AppModule {}
 ```
@@ -1936,6 +2283,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { requireEnv } from '@eda/shared';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -1943,6 +2292,20 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'analytics-service',
+        brokers: requireEnv('KAFKA_BROKERS').split(','),
+      },
+      consumer: { groupId: 'analytics-service' },
+      subscribe: { fromBeginning: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3030);
   await app.listen(port, '0.0.0.0');
   console.log(`analytics-service listening on ${port}`);
@@ -1954,12 +2317,12 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 8.3 — Build
+### Step 8.5 — Build
 
-- [ ] Run:
+- [ ] From the **repository root**:
 
 ```bash
-pnpm --filter @eda/analytics build
+npx nest build analytics
 ```
 
 **Expected:** Build succeeds.
@@ -1967,24 +2330,38 @@ pnpm --filter @eda/analytics build
 ### Checkpoint
 
 - Analytics service builds.
-- `GET /events` will return recorded events after E2E test.
+- `GET /events` returns recorded events after E2E test.
 
 ### Suggested commit
 
 ```bash
-git add services/analytics
-git commit -m "feat: add analytics service for payment and invoice events"
+git add nest-cli.json services/analytics
+git commit -m "feat: add analytics service with Nest Kafka event handlers"
 ```
 
 ---
 
 ## Phase 9 — Invoice Service
 
-**Goal:** Consume `orders.payment.succeeded`, publish `billing.invoice.created`.
+**Goal:** Consume `orders.payment.succeeded`, publish `billing.invoice.created`. Hybrid app with Kafka consumer + Kafka producer.
 
-**Port:** `3040` | **Package:** `@eda/invoice`
+**Port:** `3040` | **Package:** `@eda/invoice` | **Nest project:** `invoice`
 
-### Step 9.1 — Package scaffold
+### Step 9.1 — Register project and scaffold with nest-cli
+
+- [ ] Register `invoice` in root `nest-cli.json` → `projects`:
+
+```json
+"invoice": {
+  "type": "application",
+  "root": "services/invoice",
+  "entryFile": "main",
+  "sourceRoot": "services/invoice/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/invoice/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `services/invoice/package.json`:
 
@@ -1994,15 +2371,16 @@ git commit -m "feat: add analytics service for payment and invoice events"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build invoice --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start invoice --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -2024,128 +2402,143 @@ git commit -m "feat: add analytics service for payment and invoice events"
 }
 ```
 
-- [ ] Create `services/invoice/nest-cli.json`:
+- [ ] Bootstrap and scaffold (from **repository root**):
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/invoice/src
 ```
 
-### Step 9.2 — Kafka producer and consumer
+Create minimal `app.module.ts` and `main.ts`, then:
 
-- [ ] Create `services/invoice/src/kafka.producer.ts`:
+```bash
+npx nest g module invoice --project invoice --no-spec
+npx nest g controller payment-events --project invoice --no-spec
+npx nest g service kafka-producer --project invoice --no-spec
+```
+
+### Step 9.2 — Kafka producer
+
+- [ ] Replace `services/invoice/src/kafka-producer.service.ts`:
 
 ```typescript
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
 import { InvoiceCreated, TOPICS } from '@eda/contracts';
-import { requireEnv } from '@eda/shared';
-import { Kafka, Producer } from 'kafkajs';
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class KafkaProducerService implements OnModuleInit, OnModuleDestroy {
-  private producer!: Producer;
+  constructor(
+    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafkaProxy,
+  ) {}
 
   async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'invoice-service', brokers });
-    this.producer = kafka.producer();
-    await this.producer.connect();
+    await (this.kafka as ClientKafka).connect();
   }
 
   async publishInvoiceCreated(event: InvoiceCreated): Promise<void> {
-    await this.producer.send({
-      topic: TOPICS.INVOICE_CREATED,
-      messages: [
-        {
-          key: event.orderNumber,
-          value: JSON.stringify(event),
-        },
-      ],
-    });
+    await firstValueFrom(this.kafka.emit(TOPICS.INVOICE_CREATED, event));
   }
 
   async onModuleDestroy() {
-    await this.producer?.disconnect();
+    await (this.kafka as ClientKafka).close();
   }
 }
 ```
 
-- [ ] Create `services/invoice/src/kafka.consumer.ts`:
+### Step 9.3 — Kafka consumer (`@EventPattern`)
+
+- [ ] Replace `services/invoice/src/payment-events.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { PaymentSucceededSchema, TOPICS } from '@eda/contracts';
-import { IdempotencyStore, requireEnv } from '@eda/shared';
-import { Kafka, Consumer } from 'kafkajs';
+import { IdempotencyStore } from '@eda/shared';
 import { randomUUID } from 'crypto';
-import { KafkaProducerService } from './kafka.producer';
+import { KafkaProducerService } from './kafka-producer.service';
 
-@Injectable()
-export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private consumer!: Consumer;
+@Controller()
+export class PaymentEventsController {
+  private readonly logger = new Logger(PaymentEventsController.name);
 
   constructor(
     private readonly idempotency: IdempotencyStore,
     private readonly producer: KafkaProducerService,
   ) {}
 
-  async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'invoice-service', brokers });
-    this.consumer = kafka.consumer({ groupId: 'invoice-service' });
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic: TOPICS.PAYMENT_SUCCEEDED, fromBeginning: false });
+  @EventPattern(TOPICS.PAYMENT_SUCCEEDED)
+  async handlePaymentSucceeded(@Payload() payload: unknown) {
+    const event = PaymentSucceededSchema.parse(payload);
 
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const event = PaymentSucceededSchema.parse(JSON.parse(raw));
+    if (this.idempotency.isDuplicate(event.orderNumber)) {
+      this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
+      return;
+    }
 
-        if (this.idempotency.isDuplicate(event.orderNumber)) {
-          this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
-          return;
-        }
+    const invoiceId = randomUUID();
+    this.logger.log(`Creating invoice ${invoiceId} for order ${event.orderNumber}`);
 
-        const invoiceId = randomUUID();
-        this.logger.log(`Creating invoice ${invoiceId} for order ${event.orderNumber}`);
-
-        await this.producer.publishInvoiceCreated({
-          invoiceId,
-          value: event.value,
-          customerInfo: event.customerInfo,
-          orderNumber: event.orderNumber,
-        });
-
-        this.idempotency.markProcessed(event.orderNumber);
-      },
+    await this.producer.publishInvoiceCreated({
+      invoiceId,
+      value: event.value,
+      customerInfo: event.customerInfo,
+      orderNumber: event.orderNumber,
     });
-  }
 
-  async onModuleDestroy() {
-    await this.consumer?.disconnect();
+    this.idempotency.markProcessed(event.orderNumber);
   }
 }
+```
+
+### Step 9.4 — Wire modules and hybrid main
+
+- [ ] Replace `services/invoice/src/invoice.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { IdempotencyStore, requireEnv } from '@eda/shared';
+import { PaymentEventsController } from './payment-events.controller';
+import { KafkaProducerService } from './kafka-producer.service';
+
+@Module({
+  imports: [
+    ClientsModule.register([
+      {
+        name: 'KAFKA_SERVICE',
+        transport: Transport.KAFKA,
+        options: {
+          client: {
+            clientId: 'invoice-service',
+            brokers: requireEnv('KAFKA_BROKERS').split(','),
+          },
+          producer: { allowAutoTopicCreation: false },
+        },
+      },
+    ]),
+  ],
+  controllers: [PaymentEventsController],
+  providers: [IdempotencyStore, KafkaProducerService],
+})
+export class InvoiceModule {}
 ```
 
 - [ ] Create `services/invoice/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HealthController, IdempotencyStore } from '@eda/shared';
-import { KafkaConsumerService } from './kafka.consumer';
-import { KafkaProducerService } from './kafka.producer';
+import { HealthController } from '@eda/shared';
+import { InvoiceModule } from './invoice.module';
 
 @Module({
+  imports: [InvoiceModule],
   controllers: [HealthController],
-  providers: [IdempotencyStore, KafkaProducerService, KafkaConsumerService],
 })
 export class AppModule {}
 ```
@@ -2158,6 +2551,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { requireEnv } from '@eda/shared';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -2165,6 +2560,20 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'invoice-service',
+        brokers: requireEnv('KAFKA_BROKERS').split(','),
+      },
+      consumer: { groupId: 'invoice-service' },
+      subscribe: { fromBeginning: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3040);
   await app.listen(port, '0.0.0.0');
   console.log(`invoice-service listening on ${port}`);
@@ -2176,12 +2585,12 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 9.3 — Build
+### Step 9.5 — Build
 
-- [ ] Run:
+- [ ] From the **repository root**:
 
 ```bash
-pnpm --filter @eda/invoice build
+npx nest build invoice
 ```
 
 **Expected:** Build succeeds.
@@ -2189,24 +2598,38 @@ pnpm --filter @eda/invoice build
 ### Checkpoint
 
 - Invoice service builds.
-- Consumes `orders.payment.succeeded`, publishes `billing.invoice.created`.
+- Consumes `orders.payment.succeeded`, publishes `billing.invoice.created` via `emit()`.
 
 ### Suggested commit
 
 ```bash
-git add services/invoice
-git commit -m "feat: add invoice service with Kafka consume and publish"
+git add nest-cli.json services/invoice
+git commit -m "feat: add invoice service with Nest Kafka consume and publish"
 ```
 
 ---
 
 ## Phase 10 — Notification Service
 
-**Goal:** Consume `billing.invoice.created`, send email via SendGrid mock.
+**Goal:** Consume `billing.invoice.created`, send email via SendGrid mock. Hybrid app (HTTP health + Kafka consumer).
 
-**Port:** `3050` | **Package:** `@eda/notification`
+**Port:** `3050` | **Package:** `@eda/notification` | **Nest project:** `notification`
 
-### Step 10.1 — Package scaffold
+### Step 10.1 — Register project and scaffold with nest-cli
+
+- [ ] Register `notification` in root `nest-cli.json` → `projects`:
+
+```json
+"notification": {
+  "type": "application",
+  "root": "services/notification",
+  "entryFile": "main",
+  "sourceRoot": "services/notification/src",
+  "compilerOptions": {
+    "tsConfigPath": "services/notification/tsconfig.json"
+  }
+}
+```
 
 - [ ] Create `services/notification/package.json`:
 
@@ -2216,15 +2639,16 @@ git commit -m "feat: add invoice service with Kafka consume and publish"
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "npx nest build notification --config ../../nest-cli.json",
     "start": "node dist/main.js",
-    "start:dev": "nest start --watch"
+    "start:dev": "npx nest start notification --watch --config ../../nest-cli.json"
   },
   "dependencies": {
     "@eda/contracts": "workspace:*",
     "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
+    "@nestjs/microservices": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
     "kafkajs": "^2.2.4",
     "reflect-metadata": "^0.2.2",
@@ -2246,30 +2670,31 @@ git commit -m "feat: add invoice service with Kafka consume and publish"
 }
 ```
 
-- [ ] Create `services/notification/nest-cli.json`:
+- [ ] Bootstrap and scaffold (from **repository root**):
 
-```json
-{
-  "$schema": "https://json.schemastore.org/nest-cli",
-  "collection": "@nestjs/schematics",
-  "sourceRoot": "src",
-  "compilerOptions": {
-    "deleteOutDir": true
-  }
-}
+```bash
+mkdir -p services/notification/src
 ```
 
-### Step 10.2 — SendGrid client and Kafka consumer
+Create minimal `app.module.ts` and `main.ts`, then:
 
-- [ ] Create `services/notification/src/sendgrid.client.ts`:
+```bash
+npx nest g module notification --project notification --no-spec
+npx nest g controller invoice-events --project notification --no-spec
+npx nest g service sendgrid --project notification --no-spec
+```
+
+### Step 10.2 — SendGrid client
+
+- [ ] Replace `services/notification/src/sendgrid.service.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
 import { requireEnv } from '@eda/shared';
 
 @Injectable()
-export class SendGridClient {
-  private readonly logger = new Logger(SendGridClient.name);
+export class SendGridService {
+  private readonly logger = new Logger(SendGridService.name);
   private readonly baseUrl = requireEnv('SENDGRID_MOCK_URL');
 
   async sendInvoiceEmail(email: string, invoiceId: string, orderNumber: string) {
@@ -2298,71 +2723,73 @@ export class SendGridClient {
 }
 ```
 
-- [ ] Create `services/notification/src/kafka.consumer.ts`:
+### Step 10.3 — Kafka consumer (`@EventPattern`)
+
+- [ ] Replace `services/notification/src/invoice-events.controller.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
 import { InvoiceCreatedSchema, TOPICS } from '@eda/contracts';
-import { IdempotencyStore, requireEnv } from '@eda/shared';
-import { Kafka, Consumer } from 'kafkajs';
-import { SendGridClient } from './sendgrid.client';
+import { IdempotencyStore } from '@eda/shared';
+import { SendGridService } from './sendgrid.service';
 
-@Injectable()
-export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(KafkaConsumerService.name);
-  private consumer!: Consumer;
+@Controller()
+export class InvoiceEventsController {
+  private readonly logger = new Logger(InvoiceEventsController.name);
 
   constructor(
     private readonly idempotency: IdempotencyStore,
-    private readonly sendGrid: SendGridClient,
+    private readonly sendGrid: SendGridService,
   ) {}
 
-  async onModuleInit() {
-    const brokers = requireEnv('KAFKA_BROKERS').split(',');
-    const kafka = new Kafka({ clientId: 'notification-service', brokers });
-    this.consumer = kafka.consumer({ groupId: 'notification-service' });
-    await this.consumer.connect();
-    await this.consumer.subscribe({ topic: TOPICS.INVOICE_CREATED, fromBeginning: false });
+  @EventPattern(TOPICS.INVOICE_CREATED)
+  async handleInvoiceCreated(@Payload() payload: unknown) {
+    const event = InvoiceCreatedSchema.parse(payload);
 
-    await this.consumer.run({
-      eachMessage: async ({ message }) => {
-        const raw = message.value?.toString();
-        if (!raw) return;
-        const event = InvoiceCreatedSchema.parse(JSON.parse(raw));
+    if (this.idempotency.isDuplicate(event.invoiceId)) {
+      this.logger.warn(`Duplicate billing.invoice.created: ${event.invoiceId}`);
+      return;
+    }
 
-        if (this.idempotency.isDuplicate(event.invoiceId)) {
-          this.logger.warn(`Duplicate billing.invoice.created: ${event.invoiceId}`);
-          return;
-        }
+    await this.sendGrid.sendInvoiceEmail(
+      event.customerInfo.email,
+      event.invoiceId,
+      event.orderNumber,
+    );
 
-        await this.sendGrid.sendInvoiceEmail(
-          event.customerInfo.email,
-          event.invoiceId,
-          event.orderNumber,
-        );
-
-        this.idempotency.markProcessed(event.invoiceId);
-      },
-    });
-  }
-
-  async onModuleDestroy() {
-    await this.consumer?.disconnect();
+    this.idempotency.markProcessed(event.invoiceId);
   }
 }
+```
+
+### Step 10.4 — Wire modules and hybrid main
+
+- [ ] Replace `services/notification/src/notification.module.ts`:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { IdempotencyStore } from '@eda/shared';
+import { InvoiceEventsController } from './invoice-events.controller';
+import { SendGridService } from './sendgrid.service';
+
+@Module({
+  controllers: [InvoiceEventsController],
+  providers: [IdempotencyStore, SendGridService],
+})
+export class NotificationModule {}
 ```
 
 - [ ] Create `services/notification/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { HealthController, IdempotencyStore } from '@eda/shared';
-import { KafkaConsumerService } from './kafka.consumer';
-import { SendGridClient } from './sendgrid.client';
+import { HealthController } from '@eda/shared';
+import { NotificationModule } from './notification.module';
 
 @Module({
+  imports: [NotificationModule],
   controllers: [HealthController],
-  providers: [IdempotencyStore, SendGridClient, KafkaConsumerService],
 })
 export class AppModule {}
 ```
@@ -2375,6 +2802,8 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import { MicroserviceOptions, Transport } from '@nestjs/microservices';
+import { requireEnv } from '@eda/shared';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -2382,6 +2811,20 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.KAFKA,
+    options: {
+      client: {
+        clientId: 'notification-service',
+        brokers: requireEnv('KAFKA_BROKERS').split(','),
+      },
+      consumer: { groupId: 'notification-service' },
+      subscribe: { fromBeginning: false },
+    },
+  });
+
+  await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3050);
   await app.listen(port, '0.0.0.0');
   console.log(`notification-service listening on ${port}`);
@@ -2393,9 +2836,20 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 10.3 — Build all services
+### Step 10.5 — Build all services
 
-- [ ] Run:
+- [ ] From the **repository root**:
+
+```bash
+npx nest build api-gateway
+npx nest build payment
+npx nest build availability
+npx nest build analytics
+npx nest build invoice
+npx nest build notification
+```
+
+Or:
 
 ```bash
 pnpm run build:all
@@ -2405,13 +2859,13 @@ pnpm run build:all
 
 ### Checkpoint
 
-- All 6 services + 2 mocks build successfully.
+- All 6 services + 2 mocks build successfully via `npx nest build <project>`.
 
 ### Suggested commit
 
 ```bash
-git add services/notification
-git commit -m "feat: add notification service consuming billing.invoice.created"
+git add nest-cli.json services/notification
+git commit -m "feat: add notification service with Nest Kafka consumer"
 ```
 
 ---
@@ -2434,6 +2888,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY nest-cli.json ./
 COPY tsconfig.base.json ./
 COPY packages/contracts ./packages/contracts
 COPY packages/shared ./packages/shared
@@ -2443,7 +2898,7 @@ RUN corepack enable
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @eda/contracts build
 RUN pnpm --filter @eda/shared build
-RUN pnpm --filter @eda/api-gateway build
+RUN npx nest build api-gateway
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2461,17 +2916,17 @@ CMD ["node", "dist/main.js"]
 
 - [ ] Create equivalent Dockerfiles by copying and adjusting paths:
 
-| Dockerfile path | Workspace build command | EXPOSE | WORKDIR |
-|-----------------|------------------------|--------|---------|
-| `services/payment/Dockerfile` | `@eda/payment` | 3010 | `services/payment` |
-| `services/availability/Dockerfile` | `@eda/availability` | 3020 | `services/availability` |
-| `services/analytics/Dockerfile` | `@eda/analytics` | 3030 | `services/analytics` |
-| `services/invoice/Dockerfile` | `@eda/invoice` | 3040 | `services/invoice` |
-| `services/notification/Dockerfile` | `@eda/notification` | 3050 | `services/notification` |
-| `mocks/stripe-mock/Dockerfile` | `@eda/stripe-mock` | 3001 | `mocks/stripe-mock` |
-| `mocks/sendgrid-mock/Dockerfile` | `@eda/sendgrid-mock` | 3002 | `mocks/sendgrid-mock` |
+| Dockerfile path | Nest build command | EXPOSE | WORKDIR |
+|-----------------|-------------------|--------|---------|
+| `services/payment/Dockerfile` | `npx nest build payment` | 3010 | `services/payment` |
+| `services/availability/Dockerfile` | `npx nest build availability` | 3020 | `services/availability` |
+| `services/analytics/Dockerfile` | `npx nest build analytics` | 3030 | `services/analytics` |
+| `services/invoice/Dockerfile` | `npx nest build invoice` | 3040 | `services/invoice` |
+| `services/notification/Dockerfile` | `npx nest build notification` | 3050 | `services/notification` |
+| `mocks/stripe-mock/Dockerfile` | `npx nest build stripe-mock` | 3001 | `mocks/stripe-mock` |
+| `mocks/sendgrid-mock/Dockerfile` | `npx nest build sendgrid-mock` | 3002 | `mocks/sendgrid-mock` |
 
-Example for `services/payment/Dockerfile` — replace `api-gateway` with `payment` and `@eda/api-gateway` with `@eda/payment`, EXPOSE `3010`.
+Example for `services/payment/Dockerfile` — replace `api-gateway` with `payment`, `npx nest build payment`, EXPOSE `3010`.
 
 Example for `mocks/stripe-mock/Dockerfile` — copy only `packages/shared` (not contracts unless needed), build `@eda/stripe-mock`.
 
@@ -2482,6 +2937,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY nest-cli.json ./
 COPY tsconfig.base.json ./
 COPY packages/contracts ./packages/contracts
 COPY packages/shared ./packages/shared
@@ -2491,7 +2947,7 @@ RUN corepack enable
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @eda/contracts build
 RUN pnpm --filter @eda/shared build
-RUN pnpm --filter @eda/payment build
+RUN npx nest build payment
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2514,6 +2970,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY nest-cli.json ./
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY mocks/stripe-mock ./mocks/stripe-mock
@@ -2521,7 +2978,7 @@ COPY mocks/stripe-mock ./mocks/stripe-mock
 RUN corepack enable
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @eda/shared build
-RUN pnpm --filter @eda/stripe-mock build
+RUN npx nest build stripe-mock
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2928,5 +3385,5 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f api-gatew
 
 ---
 
-**Congratulations.** When all phases are checked off, you have a working event-driven architecture with an API gateway, six microservices, mock external providers, and production-oriented messaging infrastructure.
+**Congratulations.** When all phases are checked off, you have a working event-driven architecture with an API gateway, six NestJS microservices (using `@nestjs/microservices` + `nest-cli`), mock external providers, and production-oriented messaging infrastructure.
 

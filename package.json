@@ -19,6 +19,10 @@
 		"@types/node": "^20.17.10",
 		"reflect-metadata": "^0.2.2",
 		"rxjs": "^7.8.1",
-		"typescript": "^5.7.2"
+		"typescript": "^5.7.2",
+		"@nestjs/microservices": "^10.4.15",
+		"amqplib": "^0.10.5",
+		"amqp-connection-manager": "^4.0.0",
+		"kafkajs": "^2.2.4"
 	}
 }
