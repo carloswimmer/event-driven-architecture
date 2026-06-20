@@ -766,7 +766,7 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
 
 ### Step 3.1 — Register project and scaffold
 
-- [ ] Register `stripe-mock` in root `nest-cli.json` → `projects` (see [Step 1.5.4](#step-154--how-to-register-a-project-repeat-in-every-app-phase)):
+- [x] Register `stripe-mock` in root `nest-cli.json` → `projects` (see [Step 1.5.4](#step-154--how-to-register-a-project-repeat-in-every-app-phase)):
 
 ```json
 "stripe-mock": {
@@ -780,14 +780,14 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
 }
 ```
 
-- [ ] Set top-level defaults (first project in the monorepo):
+- [x] Set top-level defaults (first project in the monorepo):
 
 ```json
 "root": "mocks/stripe-mock",
 "sourceRoot": "mocks/stripe-mock/src"
 ```
 
-- [ ] Create `mocks/stripe-mock/package.json`:
+- [x] Create `mocks/stripe-mock/package.json`:
 
 ```json
 {
@@ -810,7 +810,7 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
 }
 ```
 
-- [ ] Create `mocks/stripe-mock/tsconfig.json`:
+- [x] Create `mocks/stripe-mock/tsconfig.json`:
 
 ```json
 {
@@ -825,7 +825,7 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
 
 ### Step 3.2 — Stripe mock implementation
 
-- [ ] Create `mocks/stripe-mock/src/stripe.controller.ts`:
+- [x] Create `mocks/stripe-mock/src/stripe.controller.ts`:
 
 ```typescript
 import { Body, Controller, Post } from '@nestjs/common';
@@ -844,7 +844,7 @@ export class StripeController {
 }
 ```
 
-- [ ] Create `mocks/stripe-mock/src/stripe.service.ts`:
+- [x] Create `mocks/stripe-mock/src/stripe.service.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -906,7 +906,7 @@ export class StripeService {
 }
 ```
 
-- [ ] Create `mocks/stripe-mock/src/app.module.ts`:
+- [x] Create `mocks/stripe-mock/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -921,7 +921,7 @@ import { StripeService } from './stripe.service';
 export class AppModule {}
 ```
 
-- [ ] Create `mocks/stripe-mock/src/main.ts`:
+- [x] Create `mocks/stripe-mock/src/main.ts`:
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
@@ -950,7 +950,7 @@ bootstrap().catch((err) => {
 
 ### Step 3.3 — Build and run locally (optional smoke test)
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 pnpm install

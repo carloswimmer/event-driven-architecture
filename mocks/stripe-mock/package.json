@@ -1,0 +1,19 @@
+{
+	"name": "@eda/stripe-mock",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"build": "cd ../.. && rm -f mocks/stripe-mock/tsconfig.tsbuildinfo && npx nest build stripe-mock",
+		"start": "node dist/main.js",
+		"start:dev": "cd ../.. && rm -f mocks/stripe-mock/tsconfig.tsbuildinfo && npx nest start stripe-mock --watch"
+	},
+	"dependencies": {
+		"@eda/shared": "workspace:*",
+		"@nestjs/common": "^10.4.15",
+		"@nestjs/core": "^10.4.15",
+		"@nestjs/platform-fastify": "^10.4.15",
+		"dotenv": "^17.4.2",
+		"reflect-metadata": "^0.2.2",
+		"rxjs": "^7.8.1"
+	}
+}
