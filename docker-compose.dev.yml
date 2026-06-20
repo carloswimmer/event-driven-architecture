@@ -1,0 +1,28 @@
+# Local development overlay — exposes broker ports and optional observability tools.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  rabbitmq:
+    ports:
+      - "127.0.0.1:5672:5672"   # AMQP (host apps)
+      - "127.0.0.1:15672:15672" # Management UI
+
+  kafka:
+    ports:
+      - "127.0.0.1:9094:9094" # Host apps (bootstrap: localhost:9094)
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: eda-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: eda-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    networks:
+      - eda-network
