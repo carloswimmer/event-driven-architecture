@@ -26,18 +26,18 @@
   ],
   "queues": [
     {
-      "name": "payment.requested",
+      "name": "orders.payment.requested",
       "vhost": "eda",
       "durable": true,
       "auto_delete": false,
       "arguments": {
         "x-queue-type": "quorum",
         "x-dead-letter-exchange": "eda.dlx",
-        "x-dead-letter-routing-key": "payment.requested.failed"
+        "x-dead-letter-routing-key": "orders.payment.requested.failed"
       }
     },
     {
-      "name": "payment.requested.dlq",
+      "name": "orders.payment.requested.dlq",
       "vhost": "eda",
       "durable": true,
       "auto_delete": false,
@@ -50,17 +50,17 @@
     {
       "source": "eda.commands",
       "vhost": "eda",
-      "destination": "payment.requested",
+      "destination": "orders.payment.requested",
       "destination_type": "queue",
-      "routing_key": "payment.requested",
+      "routing_key": "orders.payment.requested",
       "arguments": {}
     },
     {
       "source": "eda.dlx",
       "vhost": "eda",
-      "destination": "payment.requested.dlq",
+      "destination": "orders.payment.requested.dlq",
       "destination_type": "queue",
-      "routing_key": "payment.requested.failed",
+      "routing_key": "orders.payment.requested.failed",
       "arguments": {}
     }
   ]

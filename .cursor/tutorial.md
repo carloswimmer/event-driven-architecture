@@ -51,16 +51,16 @@
 flowchart LR
   Frontend -->|POST_startPayment| ApiGateway
   ApiGateway -->|SSE| Frontend
-  ApiGateway -->|payment.requested| RabbitMQ
+  ApiGateway -->|orders.payment.requested| RabbitMQ
   RabbitMQ --> PaymentService
   PaymentService --> StripeMock
   StripeMock -->|webhook_success| PaymentService
-  PaymentService -->|paymentSucceeded| Kafka
+  PaymentService -->|orders.payment.succeeded| Kafka
   Kafka --> ApiGateway
   Kafka --> AvailabilityService
   Kafka --> AnalyticsService
   Kafka --> InvoiceService
-  InvoiceService -->|invoiceCreated| Kafka
+  InvoiceService -->|billing.invoice.created| Kafka
   Kafka --> AnalyticsService
   Kafka --> NotificationService
   NotificationService --> SendGridMock
@@ -79,9 +79,21 @@ flowchart LR
 
 | Event | Transport | Payload |
 |-------|-----------|---------|
-| `payment.requested` | RabbitMQ routing key | `{ reserveId, orderNumber, amount, customerEmail }` |
-| `paymentSucceeded` | Kafka topic | `{ reserveId, value, customerInfo, orderNumber }` |
-| `invoiceCreated` | Kafka topic | `{ value, customerInfo, orderNumber, invoiceId }` |
+| `orders.payment.requested` | RabbitMQ routing key | `{ reserveId, orderNumber, amount, customerEmail }` |
+| `orders.payment.succeeded` | Kafka topic | `{ reserveId, value, customerInfo, orderNumber }` |
+| `billing.invoice.created` | Kafka topic | `{ value, customerInfo, orderNumber, invoiceId }` |
+
+### Naming convention (namespaced)
+
+Commands and events use a **`<domain>.<entity>.<action>`** pattern so multiple teams can share the same brokers without collisions:
+
+| Kind | Pattern | Examples |
+|------|---------|----------|
+| Command (RabbitMQ) | `<domain>.<entity>.<verb>` | `orders.payment.requested` |
+| Event (Kafka) | `<domain>.<entity>.<past-tense>` | `orders.payment.succeeded`, `billing.invoice.created` |
+| Dead letter | `<command>.dlq` / `<command>.failed` | `orders.payment.requested.dlq` |
+
+Define names once in `@eda/contracts` (`ROUTING_KEYS`, `TOPICS`) — never hardcode strings in services.
 
 ### Final repo layout
 
@@ -116,13 +128,13 @@ event-driven-architecture/
 
 ### Step 0.1 — Create `.env`
 
-- [ ] Copy the environment template:
+- [x] Copy the environment template:
 
 ```bash
 cp .env.example .env
 ```
 
-- [ ] Open `.env` and confirm these values exist (defaults are fine for local dev):
+- [x] Open `.env` and confirm these values exist (defaults are fine for local dev):
 
 ```bash
 RABBITMQ_USER=admin
@@ -136,7 +148,7 @@ KAFKA_RETENTION_MS=604800000
 
 ### Step 0.2 — Start the messaging stack
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
@@ -144,7 +156,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 **Expected:** All long-running services reach `healthy` or `running`. Init containers `eda-rabbitmq-init` and `eda-kafka-init` exit with code `0`.
 
-- [ ] Check status:
+- [x] Check status:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
@@ -154,23 +166,23 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
 ### Step 0.3 — Verify RabbitMQ topology
 
-- [ ] Open RabbitMQ Management UI: http://localhost:15672
-- [ ] Login: `admin` / `change-me-admin-password` (or your `.env` values)
-- [ ] Confirm:
+- [x] Open RabbitMQ Management UI: http://localhost:15672
+- [x] Login: `admin` / `change-me-admin-password` (or your `.env` values)
+- [x] Confirm:
   - Vhost **`eda`** exists
   - Exchange **`eda.commands`** (direct, durable)
-  - Queue **`payment.requested`** (quorum, with DLX → `eda.dlx`)
-  - Queue **`payment.requested.dlq`**
+  - Queue **`orders.payment.requested`** (quorum, with DLX → `eda.dlx`)
+  - Queue **`orders.payment.requested.dlq`**
   - Application user **`eda_app`** exists with permissions on vhost `eda`
 
 Topology is defined in `infra/rabbitmq/definitions.json` and imported by `infra/rabbitmq/init.sh`.
 
 ### Step 0.4 — Verify Kafka topics
 
-- [ ] Open Kafka UI: http://localhost:8080
-- [ ] Confirm topics exist:
-  - **`paymentSucceeded`** — 6 partitions
-  - **`invoiceCreated`** — 3 partitions
+- [x] Open Kafka UI: http://localhost:8080
+- [x] Confirm topics exist:
+  - **`orders.payment.succeeded`** — 6 partitions
+  - **`billing.invoice.created`** — 3 partitions
 
 Topics are created by `infra/kafka/init-topics.sh`. Auto-create is **disabled** in `docker-compose.yml` (`KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"`).
 
@@ -186,8 +198,8 @@ docker exec eda-kafka /opt/kafka/bin/kafka-topics.sh \
 **Expected:**
 
 ```text
-invoiceCreated
-paymentSucceeded
+billing.invoice.created
+orders.payment.succeeded
 ```
 
 ### Checkpoint
@@ -306,7 +318,7 @@ git add .env
 
 ```typescript
 export const ROUTING_KEYS = {
-  PAYMENT_REQUESTED: 'payment.requested',
+  PAYMENT_REQUESTED: 'orders.payment.requested',
 } as const;
 
 export const EXCHANGES = {
@@ -318,8 +330,8 @@ export const EXCHANGES = {
 
 ```typescript
 export const TOPICS = {
-  PAYMENT_SUCCEEDED: 'paymentSucceeded',
-  INVOICE_CREATED: 'invoiceCreated',
+  PAYMENT_SUCCEEDED: 'orders.payment.succeeded',
+  INVOICE_CREATED: 'billing.invoice.created',
 } as const;
 ```
 
@@ -919,7 +931,7 @@ git commit -m "feat: add mock SendGrid email service"
 
 ## Phase 5 — API Gateway / Order Service
 
-**Goal:** HTTP entry point — reserve product, publish `payment.requested`, stream SSE when payment succeeds.
+**Goal:** HTTP entry point — reserve product, publish `orders.payment.requested`, stream SSE when payment succeeds.
 
 **Port:** `3000` | **Package:** `@eda/api-gateway`
 
@@ -1054,7 +1066,7 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
       { contentType: 'application/json', persistent: true },
     );
     if (!sent) {
-      throw new Error('Failed to publish payment.requested — channel buffer full');
+      throw new Error('Failed to publish orders.payment.requested — channel buffer full');
     }
   }
 
@@ -1065,7 +1077,7 @@ export class RabbitMqService implements OnModuleInit, OnModuleDestroy {
 }
 ```
 
-### Step 5.4 — Kafka consumer (paymentSucceeded)
+### Step 5.4 — Kafka consumer (orders.payment.succeeded)
 
 - [ ] Create `services/api-gateway/src/kafka.consumer.ts`:
 
@@ -1253,7 +1265,7 @@ git commit -m "feat: add api-gateway with RabbitMQ publish and Kafka SSE"
 
 ## Phase 6 — Payment Service
 
-**Goal:** Consume `payment.requested` from RabbitMQ, call Stripe mock, publish `paymentSucceeded` to Kafka on webhook.
+**Goal:** Consume `orders.payment.requested` from RabbitMQ, call Stripe mock, publish `orders.payment.succeeded` to Kafka on webhook.
 
 **Port:** `3010` | **Package:** `@eda/payment`
 
@@ -1378,7 +1390,7 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
     this.channel = await this.connection.createChannel();
     await this.channel.prefetch(1);
 
-    await this.channel.consume('payment.requested', async (msg) => {
+    await this.channel.consume('orders.payment.requested', async (msg) => {
       if (!msg) return;
       try {
         const payload = PaymentRequestedSchema.parse(
@@ -1386,7 +1398,7 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
         );
 
         if (this.idempotency.isDuplicate(payload.orderNumber)) {
-          this.logger.warn(`Duplicate payment.requested: ${payload.orderNumber}`);
+          this.logger.warn(`Duplicate orders.payment.requested: ${payload.orderNumber}`);
           this.channel.ack(msg);
           return;
         }
@@ -1411,7 +1423,7 @@ export class RabbitMqConsumerService implements OnModuleInit, OnModuleDestroy {
         this.idempotency.markProcessed(payload.orderNumber);
         this.channel.ack(msg);
       } catch (err) {
-        this.logger.error('Failed to process payment.requested', err);
+        this.logger.error('Failed to process orders.payment.requested', err);
         this.channel.nack(msg, false, false);
       }
     });
@@ -1539,7 +1551,7 @@ git commit -m "feat: add payment service with RabbitMQ consumer and Kafka produc
 
 ## Phase 7 — Availability Service
 
-**Goal:** Consume `paymentSucceeded` and decrement mock inventory.
+**Goal:** Consume `orders.payment.succeeded` and decrement mock inventory.
 
 **Port:** `3020` | **Package:** `@eda/availability`
 
@@ -1650,7 +1662,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         const event = PaymentSucceededSchema.parse(JSON.parse(raw));
 
         if (this.idempotency.isDuplicate(event.orderNumber)) {
-          this.logger.warn(`Duplicate paymentSucceeded: ${event.orderNumber}`);
+          this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
           return;
         }
 
@@ -1719,20 +1731,20 @@ npm run build -w @eda/availability
 
 ### Checkpoint
 
-- Availability service builds and subscribes to `paymentSucceeded`.
+- Availability service builds and subscribes to `orders.payment.succeeded`.
 
 ### Suggested commit
 
 ```bash
 git add services/availability
-git commit -m "feat: add availability service consuming paymentSucceeded"
+git commit -m "feat: add availability service consuming orders.payment.succeeded"
 ```
 
 ---
 
 ## Phase 8 — Analytics Service
 
-**Goal:** Consume both `paymentSucceeded` and `invoiceCreated`; expose events for debugging.
+**Goal:** Consume both `orders.payment.succeeded` and `billing.invoice.created`; expose events for debugging.
 
 **Port:** `3030` | **Package:** `@eda/analytics`
 
@@ -1864,8 +1876,8 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         const raw = message.value?.toString();
         if (!raw) return;
         const event = PaymentSucceededSchema.parse(JSON.parse(raw));
-        this.logger.log(`Recorded paymentSucceeded: ${event.orderNumber}`);
-        this.eventsStore.append('paymentSucceeded', event);
+        this.logger.log(`Recorded orders.payment.succeeded: ${event.orderNumber}`);
+        this.eventsStore.append('orders.payment.succeeded', event);
       },
     });
 
@@ -1882,8 +1894,8 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         const raw = message.value?.toString();
         if (!raw) return;
         const event = InvoiceCreatedSchema.parse(JSON.parse(raw));
-        this.logger.log(`Recorded invoiceCreated: ${event.invoiceId}`);
-        this.eventsStore.append('invoiceCreated', event);
+        this.logger.log(`Recorded billing.invoice.created: ${event.invoiceId}`);
+        this.eventsStore.append('billing.invoice.created', event);
       },
     });
   }
@@ -1963,7 +1975,7 @@ git commit -m "feat: add analytics service for payment and invoice events"
 
 ## Phase 9 — Invoice Service
 
-**Goal:** Consume `paymentSucceeded`, publish `invoiceCreated`.
+**Goal:** Consume `orders.payment.succeeded`, publish `billing.invoice.created`.
 
 **Port:** `3040` | **Package:** `@eda/invoice`
 
@@ -2093,7 +2105,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         const event = PaymentSucceededSchema.parse(JSON.parse(raw));
 
         if (this.idempotency.isDuplicate(event.orderNumber)) {
-          this.logger.warn(`Duplicate paymentSucceeded: ${event.orderNumber}`);
+          this.logger.warn(`Duplicate orders.payment.succeeded: ${event.orderNumber}`);
           return;
         }
 
@@ -2172,7 +2184,7 @@ npm run build -w @eda/invoice
 ### Checkpoint
 
 - Invoice service builds.
-- Consumes `paymentSucceeded`, publishes `invoiceCreated`.
+- Consumes `orders.payment.succeeded`, publishes `billing.invoice.created`.
 
 ### Suggested commit
 
@@ -2185,7 +2197,7 @@ git commit -m "feat: add invoice service with Kafka consume and publish"
 
 ## Phase 10 — Notification Service
 
-**Goal:** Consume `invoiceCreated`, send email via SendGrid mock.
+**Goal:** Consume `billing.invoice.created`, send email via SendGrid mock.
 
 **Port:** `3050` | **Package:** `@eda/notification`
 
@@ -2314,7 +2326,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         const event = InvoiceCreatedSchema.parse(JSON.parse(raw));
 
         if (this.idempotency.isDuplicate(event.invoiceId)) {
-          this.logger.warn(`Duplicate invoiceCreated: ${event.invoiceId}`);
+          this.logger.warn(`Duplicate billing.invoice.created: ${event.invoiceId}`);
           return;
         }
 
@@ -2394,7 +2406,7 @@ npm run build:all
 
 ```bash
 git add services/notification
-git commit -m "feat: add notification service consuming invoiceCreated"
+git commit -m "feat: add notification service consuming billing.invoice.created"
 ```
 
 ---
@@ -2790,13 +2802,13 @@ curl -s http://localhost:3030/events | python3 -m json.tool
 ```
 
 **Expected:** Array with at least two entries:
-- `{ "type": "paymentSucceeded", ... }`
-- `{ "type": "invoiceCreated", ... }`
+- `{ "type": "orders.payment.succeeded", ... }`
+- `{ "type": "billing.invoice.created", ... }`
 
 ### Step 12.6 — Verify broker state
 
-- [ ] **RabbitMQ UI** (http://localhost:15672): queue `payment.requested` should have processed messages (Ready ≈ 0 after consumption).
-- [ ] **Kafka UI** (http://localhost:8080): topics `paymentSucceeded` and `invoiceCreated` show new messages.
+- [ ] **RabbitMQ UI** (http://localhost:15672): queue `orders.payment.requested` should have processed messages (Ready ≈ 0 after consumption).
+- [ ] **Kafka UI** (http://localhost:8080): topics `orders.payment.succeeded` and `billing.invoice.created` show new messages.
 - [ ] **Container logs:**
 
 ```bash
@@ -2846,7 +2858,7 @@ No code changes — optionally document your test order number in personal notes
 - [ ] **Idempotency:** Replace in-memory `IdempotencyStore` with Redis or PostgreSQL
 - [ ] **Schema Registry:** Confluent Schema Registry or Apicurio for Avro/Protobuf evolution
 - [ ] **Outbox pattern:** Transactional outbox for reliable publish-after-db-write
-- [ ] **Dead letters:** Monitor `payment.requested.dlq`; alert and replay tooling
+- [ ] **Dead letters:** Monitor `orders.payment.requested.dlq`; alert and replay tooling
 - [ ] **SSE at scale:** Replace in-memory Subject with Redis Pub/Sub or dedicated push service
 
 ### Operations

@@ -29,13 +29,13 @@ create_topic() {
     --config "cleanup.policy=delete"
 }
 
-# paymentSucceeded: fan-out to API, Availability, Analytics, Invoice.
+# orders.payment.succeeded: fan-out to API, Availability, Analytics, Invoice.
 # 6 partitions allow parallel consumption within a consumer group; use orderNumber as the message key.
-create_topic "paymentSucceeded" 6
+create_topic "orders.payment.succeeded" 6
 
-# invoiceCreated: fan-out to Analytics, Notification.
+# billing.invoice.created: fan-out to Analytics, Notification.
 # 3 partitions; use orderNumber or customerId as the message key.
-create_topic "invoiceCreated" 3
+create_topic "billing.invoice.created" 3
 
 echo "Kafka topics ready:"
 "$KAFKA_TOPICS" --bootstrap-server "$BOOTSTRAP_SERVER" --list

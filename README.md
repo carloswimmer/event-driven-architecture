@@ -10,16 +10,16 @@ Built to practice patterns used in production: explicit messaging topology as co
 flowchart LR
   Frontend -->|POST_startPayment| ApiGateway
   ApiGateway -->|SSE| Frontend
-  ApiGateway -->|payment.requested| RabbitMQ
+  ApiGateway -->|orders.payment.requested| RabbitMQ
   RabbitMQ --> PaymentService
   PaymentService --> StripeMock
   StripeMock -->|webhook_success| PaymentService
-  PaymentService -->|paymentSucceeded| Kafka
+  PaymentService -->|orders.payment.succeeded| Kafka
   Kafka --> ApiGateway
   Kafka --> AvailabilityService
   Kafka --> AnalyticsService
   Kafka --> InvoiceService
-  InvoiceService -->|invoiceCreated| Kafka
+  InvoiceService -->|billing.invoice.created| Kafka
   Kafka --> AnalyticsService
   Kafka --> NotificationService
   NotificationService --> SendGridMock
@@ -27,19 +27,29 @@ flowchart LR
 
 | GCP (reference diagram) | Local stack | Role |
 |-------------------------|-------------|------|
-| Cloud Tasks | **RabbitMQ** | Point-to-point: `payment.requested` → Payment Service |
-| Pub/Sub | **Kafka** | Fan-out: `paymentSucceeded`, `invoiceCreated` |
+| Cloud Tasks | **RabbitMQ** | Point-to-point: `orders.payment.requested` → Payment Service |
+| Pub/Sub | **Kafka** | Fan-out: `orders.payment.succeeded`, `billing.invoice.created` |
 | Stripe | `mocks/stripe-mock` | PaymentIntent + webhook |
 | SendGrid | `mocks/sendgrid-mock` | Email delivery |
 
 ### Event flow
 
-1. **API Gateway** receives `POST /orders`, reserves a product, publishes `payment.requested` to RabbitMQ.
-2. **Payment Service** consumes the command, calls the Stripe mock, and publishes `paymentSucceeded` to Kafka on webhook success.
-3. **Availability**, **Analytics**, **Invoice**, and **API Gateway** consume `paymentSucceeded` in parallel.
-4. **Invoice Service** publishes `invoiceCreated` to Kafka.
-5. **Analytics** and **Notification** consume `invoiceCreated`; Notification sends email via the SendGrid mock.
+1. **API Gateway** receives `POST /orders`, reserves a product, publishes `orders.payment.requested` to RabbitMQ.
+2. **Payment Service** consumes the command, calls the Stripe mock, and publishes `orders.payment.succeeded` to Kafka on webhook success.
+3. **Availability**, **Analytics**, **Invoice**, and **API Gateway** consume `orders.payment.succeeded` in parallel.
+4. **Invoice Service** publishes `billing.invoice.created` to Kafka.
+5. **Analytics** and **Notification** consume `billing.invoice.created`; Notification sends email via the SendGrid mock.
 6. **API Gateway** pushes `payment_succeeded` to the client over SSE.
+
+### Naming convention (namespaced)
+
+Commands and events use **`<domain>.<entity>.<action>`** so multiple teams can share brokers without collisions:
+
+| Kind | Pattern | Examples |
+|------|---------|----------|
+| Command (RabbitMQ) | `<domain>.<entity>.<verb>` | `orders.payment.requested` |
+| Event (Kafka) | `<domain>.<entity>.<past-tense>` | `orders.payment.succeeded`, `billing.invoice.created` |
+| Dead letter | `<command>.dlq` / `<command>.failed` | `orders.payment.requested.dlq` |
 
 ## Current status
 
@@ -81,13 +91,13 @@ Use **both** compose files locally: the base file runs brokers on the internal n
 
 Expected RabbitMQ topology (vhost `eda`):
 
-- Exchange `eda.commands` → queue `payment.requested` (quorum, with DLQ)
-- Dead-letter exchange `eda.dlx` → queue `payment.requested.dlq`
+- Exchange `eda.commands` → queue `orders.payment.requested` (quorum, with DLQ)
+- Dead-letter exchange `eda.dlx` → queue `orders.payment.requested.dlq`
 
 Expected Kafka topics:
 
-- `paymentSucceeded` (6 partitions)
-- `invoiceCreated` (3 partitions)
+- `orders.payment.succeeded` (6 partitions)
+- `billing.invoice.created` (3 partitions)
 
 Check init jobs completed successfully:
 
