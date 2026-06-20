@@ -1,67 +1,67 @@
 {
-  "vhosts": [
-    {
-      "name": "eda"
-    }
-  ],
-  "exchanges": [
-    {
-      "name": "eda.commands",
-      "vhost": "eda",
-      "type": "direct",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    },
-    {
-      "name": "eda.dlx",
-      "vhost": "eda",
-      "type": "direct",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    }
-  ],
-  "queues": [
-    {
-      "name": "orders.payment.requested",
-      "vhost": "eda",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-dead-letter-exchange": "eda.dlx",
-        "x-dead-letter-routing-key": "orders.payment.requested.failed"
-      }
-    },
-    {
-      "name": "orders.payment.requested.dlq",
-      "vhost": "eda",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum"
-      }
-    }
-  ],
-  "bindings": [
-    {
-      "source": "eda.commands",
-      "vhost": "eda",
-      "destination": "orders.payment.requested",
-      "destination_type": "queue",
-      "routing_key": "orders.payment.requested",
-      "arguments": {}
-    },
-    {
-      "source": "eda.dlx",
-      "vhost": "eda",
-      "destination": "orders.payment.requested.dlq",
-      "destination_type": "queue",
-      "routing_key": "orders.payment.requested.failed",
-      "arguments": {}
-    }
-  ]
+	"vhosts": [
+		{
+			"name": "eda"
+		}
+	],
+	"exchanges": [
+		{
+			"name": "eda.commands",
+			"vhost": "eda",
+			"type": "direct",
+			"durable": true,
+			"auto_delete": false,
+			"internal": false,
+			"arguments": {}
+		},
+		{
+			"name": "eda.dlx",
+			"vhost": "eda",
+			"type": "direct",
+			"durable": true,
+			"auto_delete": false,
+			"internal": false,
+			"arguments": {}
+		}
+	],
+	"queues": [
+		{
+			"name": "orders.payment.requested",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum",
+				"x-dead-letter-exchange": "eda.dlx",
+				"x-dead-letter-routing-key": "orders.payment.requested.failed"
+			}
+		},
+		{
+			"name": "orders.payment.requested.dlq",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum"
+			}
+		}
+	],
+	"bindings": [
+		{
+			"source": "eda.commands",
+			"vhost": "eda",
+			"destination": "orders.payment.requested",
+			"destination_type": "queue",
+			"routing_key": "orders.payment.requested",
+			"arguments": {}
+		},
+		{
+			"source": "eda.dlx",
+			"vhost": "eda",
+			"destination": "orders.payment.requested.dlq",
+			"destination_type": "queue",
+			"routing_key": "orders.payment.requested.failed",
+			"arguments": {}
+		}
+	]
 }

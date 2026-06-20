@@ -2,7 +2,7 @@
 
 > **Goal:** Build the full payment/order flow from the architecture diagram using NestJS + Fastify, RabbitMQ (point-to-point), and Kafka (pub/sub) — entirely by hand, one checkbox at a time.
 
-**Stack:** Node.js 20+, TypeScript, NestJS with Fastify adapter, npm workspaces monorepo, mock Stripe/SendGrid.
+**Stack:** Node.js 20+, TypeScript, NestJS with Fastify adapter, pnpm workspaces monorepo, mock Stripe/SendGrid.
 
 **How to use this tutorial:**
 
@@ -39,7 +39,7 @@
 
 - **Docker Desktop** running (macOS/Windows/Linux)
 - **Node.js 20+** — verify: `node -v` → `v20.x.x` or higher
-- **npm 10+** — verify: `npm -v` → `10.x.x` or higher
+- **pnpm 9+** — enable via Corepack (ships with Node 20): `corepack enable` — verify: `pnpm -v` → `9.x.x` or higher
 - **curl** — for HTTP/SSE testing
 - Repository cloned at `event-driven-architecture/`
 
@@ -221,24 +221,20 @@ git add .env
 
 ## Phase 1 — Monorepo scaffolding
 
-**Goal:** Create the npm workspaces root and the `@eda/contracts` shared package.
+**Goal:** Create the pnpm workspace root and the `@eda/contracts` shared package.
 
 ### Step 1.1 — Root `package.json`
 
-- [ ] Create `package.json` at the repository root:
+- [x] Create `package.json` at the repository root:
 
 ```json
 {
   "name": "event-driven-architecture",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "services/*",
-    "mocks/*"
-  ],
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build": "npm run build -w @eda/contracts && npm run build -w @eda/shared",
-    "build:all": "npm run build && npm run build -ws --if-present"
+    "build": "pnpm --filter @eda/contracts build && pnpm --filter @eda/shared build",
+    "build:all": "pnpm run build && pnpm -r --if-present build"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
@@ -254,9 +250,18 @@ git add .env
 }
 ```
 
+- [x] Create `pnpm-workspace.yaml` at the repository root:
+
+```yaml
+packages:
+  - 'packages/*'
+  - 'services/*'
+  - 'mocks/*'
+```
+
 ### Step 1.2 — Root TypeScript config
 
-- [ ] Create `tsconfig.base.json`:
+- [x] Create `tsconfig.base.json`:
 
 ```json
 {
@@ -283,7 +288,7 @@ git add .env
 
 ### Step 1.3 — Contracts package
 
-- [ ] Create `packages/contracts/package.json`:
+- [x] Create `packages/contracts/package.json`:
 
 ```json
 {
@@ -301,7 +306,7 @@ git add .env
 }
 ```
 
-- [ ] Create `packages/contracts/tsconfig.json`:
+- [x] Create `packages/contracts/tsconfig.json`:
 
 ```json
 {
@@ -314,7 +319,7 @@ git add .env
 }
 ```
 
-- [ ] Create `packages/contracts/src/routing-keys.ts`:
+- [x] Create `packages/contracts/src/routing-keys.ts`:
 
 ```typescript
 export const ROUTING_KEYS = {
@@ -326,7 +331,7 @@ export const EXCHANGES = {
 } as const;
 ```
 
-- [ ] Create `packages/contracts/src/topics.ts`:
+- [x] Create `packages/contracts/src/topics.ts`:
 
 ```typescript
 export const TOPICS = {
@@ -335,7 +340,7 @@ export const TOPICS = {
 } as const;
 ```
 
-- [ ] Create `packages/contracts/src/events/payment-requested.ts`:
+- [x] Create `packages/contracts/src/events/payment-requested.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -350,7 +355,7 @@ export const PaymentRequestedSchema = z.object({
 export type PaymentRequested = z.infer<typeof PaymentRequestedSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/events/payment-succeeded.ts`:
+- [x] Create `packages/contracts/src/events/payment-succeeded.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -369,7 +374,7 @@ export const PaymentSucceededSchema = z.object({
 export type PaymentSucceeded = z.infer<typeof PaymentSucceededSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/events/invoice-created.ts`:
+- [x] Create `packages/contracts/src/events/invoice-created.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -385,7 +390,7 @@ export const InvoiceCreatedSchema = z.object({
 export type InvoiceCreated = z.infer<typeof InvoiceCreatedSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/index.ts`:
+- [x] Create `packages/contracts/src/index.ts`:
 
 ```typescript
 export * from './routing-keys';
@@ -400,21 +405,21 @@ export * from './events/invoice-created';
 - [ ] From the repository root:
 
 ```bash
-npm install
-npm run build -w @eda/contracts
+pnpm install
+pnpm --filter @eda/contracts build
 ```
 
 **Expected:** `packages/contracts/dist/` is created with compiled `.js` and `.d.ts` files. No TypeScript errors.
 
 ### Checkpoint
 
-- `npm run build -w @eda/contracts` succeeds.
+- `pnpm --filter @eda/contracts build` succeeds.
 - You can import `@eda/contracts` from other workspace packages.
 
 ### Suggested commit
 
 ```bash
-git add package.json tsconfig.base.json packages/contracts package-lock.json
+git add package.json pnpm-workspace.yaml tsconfig.base.json packages/contracts pnpm-lock.yaml
 git commit -m "feat: add monorepo scaffolding and shared event contracts"
 ```
 
@@ -439,7 +444,7 @@ git commit -m "feat: add monorepo scaffolding and shared event contracts"
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@eda/contracts": "*",
+    "@eda/contracts": "workspace:*",
     "@nestjs/common": "^10.4.15"
   }
 }
@@ -527,8 +532,8 @@ export * from './health.controller';
 - [ ] Run:
 
 ```bash
-npm install
-npm run build -w @eda/shared
+pnpm install
+pnpm --filter @eda/shared build
 ```
 
 **Expected:** `packages/shared/dist/` created successfully.
@@ -578,7 +583,7 @@ git commit -m "feat: add shared NestJS utilities for health and idempotency"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/shared": "*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -744,9 +749,9 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm install
-npm run build -w @eda/stripe-mock
-PAYMENT_WEBHOOK_URL=http://localhost:3010/webhooks/stripe PORT=3001 npm run start -w @eda/stripe-mock
+pnpm install
+pnpm --filter @eda/stripe-mock build
+PAYMENT_WEBHOOK_URL=http://localhost:3010/webhooks/stripe PORT=3001 pnpm --filter @eda/stripe-mock start
 ```
 
 **Expected:** `stripe-mock listening on 3001` (Payment Service is not running yet — webhook will fail; that is OK for now).
@@ -788,7 +793,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/shared": "*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -910,7 +915,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build -w @eda/sendgrid-mock
+pnpm --filter @eda/sendgrid-mock build
 ```
 
 **Expected:** Build succeeds with no errors.
@@ -950,8 +955,8 @@ git commit -m "feat: add mock SendGrid email service"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -1243,8 +1248,8 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm install
-npm run build -w @eda/api-gateway
+pnpm install
+pnpm --filter @eda/api-gateway build
 ```
 
 **Expected:** Build succeeds.
@@ -1284,8 +1289,8 @@ git commit -m "feat: add api-gateway with RabbitMQ publish and Kafka SSE"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -1530,7 +1535,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build -w @eda/payment
+pnpm --filter @eda/payment build
 ```
 
 **Expected:** Build succeeds.
@@ -1570,8 +1575,8 @@ git commit -m "feat: add payment service with RabbitMQ consumer and Kafka produc
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -1724,7 +1729,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build -w @eda/availability
+pnpm --filter @eda/availability build
 ```
 
 **Expected:** Build succeeds.
@@ -1763,8 +1768,8 @@ git commit -m "feat: add availability service consuming orders.payment.succeeded
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -1954,7 +1959,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build -w @eda/analytics
+pnpm --filter @eda/analytics build
 ```
 
 **Expected:** Build succeeds.
@@ -1994,8 +1999,8 @@ git commit -m "feat: add analytics service for payment and invoice events"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -2176,7 +2181,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build -w @eda/invoice
+pnpm --filter @eda/invoice build
 ```
 
 **Expected:** Build succeeds.
@@ -2216,8 +2221,8 @@ git commit -m "feat: add invoice service with Kafka consume and publish"
     "start:dev": "nest start --watch"
   },
   "dependencies": {
-    "@eda/contracts": "*",
-    "@eda/shared": "*",
+    "@eda/contracts": "workspace:*",
+    "@eda/shared": "workspace:*",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-fastify": "^10.4.15",
@@ -2393,7 +2398,7 @@ bootstrap().catch((err) => {
 - [ ] Run:
 
 ```bash
-npm run build:all
+pnpm run build:all
 ```
 
 **Expected:** All workspace packages build without errors.
@@ -2428,16 +2433,17 @@ Each service and mock uses the same multi-stage build from the **repository root
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tsconfig.base.json ./
 COPY packages/contracts ./packages/contracts
 COPY packages/shared ./packages/shared
 COPY services/api-gateway ./services/api-gateway
 
-RUN npm ci
-RUN npm run build -w @eda/contracts
-RUN npm run build -w @eda/shared
-RUN npm run build -w @eda/api-gateway
+RUN corepack enable
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @eda/contracts build
+RUN pnpm --filter @eda/shared build
+RUN pnpm --filter @eda/api-gateway build
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2475,16 +2481,17 @@ Example for `mocks/stripe-mock/Dockerfile` — copy only `packages/shared` (not 
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tsconfig.base.json ./
 COPY packages/contracts ./packages/contracts
 COPY packages/shared ./packages/shared
 COPY services/payment ./services/payment
 
-RUN npm ci
-RUN npm run build -w @eda/contracts
-RUN npm run build -w @eda/shared
-RUN npm run build -w @eda/payment
+RUN corepack enable
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @eda/contracts build
+RUN pnpm --filter @eda/shared build
+RUN pnpm --filter @eda/payment build
 
 FROM node:20-alpine
 WORKDIR /app
@@ -2506,14 +2513,15 @@ CMD ["node", "dist/main.js"]
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY mocks/stripe-mock ./mocks/stripe-mock
 
-RUN npm ci
-RUN npm run build -w @eda/shared
-RUN npm run build -w @eda/stripe-mock
+RUN corepack enable
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @eda/shared build
+RUN pnpm --filter @eda/stripe-mock build
 
 FROM node:20-alpine
 WORKDIR /app
