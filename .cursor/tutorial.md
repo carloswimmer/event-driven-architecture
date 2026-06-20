@@ -657,7 +657,7 @@ git commit -m "feat: add Nest monorepo skeleton and microservices dependencies"
 
 Every consumer in the diagram is marked **Idempotent**. For this tutorial, use an in-memory store. In production, replace with Redis or a database table.
 
-- [ ] Create `packages/shared/src/idempotency.store.ts`:
+- [x] Create `packages/shared/src/idempotency.store.ts`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -679,7 +679,7 @@ export class IdempotencyStore {
 
 ### Step 2.3 — Env helper
 
-- [ ] Create `packages/shared/src/env.ts`:
+- [x] Create `packages/shared/src/env.ts`:
 
 ```typescript
 export function requireEnv(name: string): string {
@@ -693,7 +693,7 @@ export function requireEnv(name: string): string {
 
 ### Step 2.4 — Health controller
 
-- [ ] Create `packages/shared/src/health.controller.ts`:
+- [x] Create `packages/shared/src/health.controller.ts`:
 
 ```typescript
 import { Controller, Get } from '@nestjs/common';
@@ -709,7 +709,7 @@ export class HealthController {
 
 ### Step 2.5 — Barrel export
 
-- [ ] Create `packages/shared/src/index.ts`:
+- [x] Create `packages/shared/src/index.ts`:
 
 ```typescript
 export * from './idempotency.store';
@@ -719,7 +719,7 @@ export * from './health.controller';
 
 ### Step 2.6 — Build shared package
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 pnpm install
