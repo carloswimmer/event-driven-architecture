@@ -29,6 +29,8 @@ create_topic() {
     --config "cleanup.policy=delete"
 }
 
+create_topic "orders.payment.failed" 3
+
 # orders.payment.succeeded: fan-out to API, Availability, Analytics, Invoice.
 # 6 partitions allow parallel consumption within a consumer group; use orderNumber as the message key.
 create_topic "orders.payment.succeeded" 6

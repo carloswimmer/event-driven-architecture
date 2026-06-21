@@ -67,4 +67,3 @@ temp/
 # Optional local tooling
 .turbo/
 .nx/
-.eslintcache
