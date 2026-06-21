@@ -2,8 +2,8 @@
 	"$schema": "https://json.schemastore.org/nest-cli",
 	"collection": "@nestjs/schematics",
 	"monorepo": true,
-	"root": "mocks/stripe-mock",
-	"sourceRoot": "mocks/stripe-mock/src",
+	"root": "mocks/sendgrid-mock",
+	"sourceRoot": "mocks/sendgrid-mock/src",
 	"compilerOptions": {
 		"deleteOutDir": true
 	},
@@ -24,6 +24,15 @@
 			"sourceRoot": "mocks/stripe-mock/src",
 			"compilerOptions": {
 				"tsConfigPath": "mocks/stripe-mock/tsconfig.json"
+			}
+		},
+		"sendgrid-mock": {
+			"type": "application",
+			"root": "mocks/sendgrid-mock",
+			"entryFile": "main",
+			"sourceRoot": "mocks/sendgrid-mock/src",
+			"compilerOptions": {
+				"tsConfigPath": "mocks/sendgrid-mock/tsconfig.json"
 			}
 		}
 	}

@@ -984,7 +984,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 ### Step 4.1 — Register project and scaffold
 
-- [ ] Register `sendgrid-mock` in root `nest-cli.json` → `projects`:
+- [x] Register `sendgrid-mock` in root `nest-cli.json` → `projects`:
 
 ```json
 "sendgrid-mock": {
@@ -998,7 +998,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 }
 ```
 
-- [ ] Create `mocks/sendgrid-mock/package.json`:
+- [x] Create `mocks/sendgrid-mock/package.json`:
 
 ```json
 {
@@ -1021,7 +1021,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 }
 ```
 
-- [ ] Create `mocks/sendgrid-mock/tsconfig.json`:
+- [x] Create `mocks/sendgrid-mock/tsconfig.json`:
 
 ```json
 {
@@ -1036,7 +1036,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 ### Step 4.2 — SendGrid mock implementation
 
-- [ ] Create `mocks/sendgrid-mock/src/mail.controller.ts`:
+- [x] Create `mocks/sendgrid-mock/src/mail.controller.ts`:
 
 ```typescript
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
@@ -1054,7 +1054,7 @@ export class MailController {
 }
 ```
 
-- [ ] Create `mocks/sendgrid-mock/src/mail.service.ts`:
+- [x] Create `mocks/sendgrid-mock/src/mail.service.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -1074,7 +1074,7 @@ export class MailService {
 }
 ```
 
-- [ ] Create `mocks/sendgrid-mock/src/app.module.ts`:
+- [x] Create `mocks/sendgrid-mock/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -1089,7 +1089,7 @@ import { MailService } from './mail.service';
 export class AppModule {}
 ```
 
-- [ ] Create `mocks/sendgrid-mock/src/main.ts`:
+- [x] Create `mocks/sendgrid-mock/src/main.ts`:
 
 ```typescript
 import { NestFactory } from '@nestjs/core';
@@ -1117,7 +1117,7 @@ bootstrap().catch((err) => {
 
 ### Step 4.3 — Build
 
-- [ ] Run:
+- [x] Run:
 
 ```bash
 pnpm --filter @eda/sendgrid-mock build
