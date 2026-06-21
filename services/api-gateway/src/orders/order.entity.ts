@@ -11,9 +11,3 @@ export interface Order {
 	customerEmail: string
 	status: OrderStatus
 }
-
-export interface CreateOrderInput {
-	productId: string
-	customerEmail: string
-	amount: number
-}

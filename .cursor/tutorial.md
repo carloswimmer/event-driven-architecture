@@ -96,7 +96,7 @@ Commands and events use a **`<domain>.<entity>.<action>`** pattern so multiple t
 | Event (Kafka) | `<domain>.<entity>.<past-tense>` | `orders.payment.succeeded`, `orders.payment.failed`, `billing.invoice.created` |
 | Dead letter | `<command>.dlq` / `<command>.failed` | `orders.payment.requested.dlq` |
 
-Define names once in `packages/contracts` (`ROUTING_KEYS`, `TOPICS`) — microservices install it via `file:../../packages/contracts`; never hardcode strings in services.
+Define names once in `packages/contracts` (`ROUTING_KEYS`, `TOPICS`, Zod schemas) — microservices install it via `file:../../packages/contracts`; never hardcode strings in services. Validate every payload with the matching `*Schema.parse(...)` at the service boundary.
 
 ### Final repo layout
 
@@ -1181,6 +1181,7 @@ Phases 3–4 used `@eda/shared`. Standalone services keep the same helpers local
 | `src/common/env.ts` | `requireEnv()` |
 | `src/common/health.controller.ts` | `GET /health` |
 | `src/common/idempotency.store.ts` | In-memory dedup |
+| `src/common/zod-validation.filter.ts` | Map `ZodError` → HTTP 400 |
 
 Phase 5 creates these files. Phases 6–10 copy them: `cp -r ../api-gateway/src/common ./src/common`.
 
@@ -1235,14 +1236,24 @@ pnpm lint:fix
 
 | Layer | Folder / file | Role |
 |-------|---------------|------|
-| HTTP inbound | `*.controller.ts` | Thin — DTO in, delegate to service |
+| Validation | `@eda/contracts` schemas + local `*.schema.ts` | Zod at every inbound/outbound boundary |
+| HTTP inbound | `*.controller.ts` | Thin — `Schema.parse(body)`, delegate to service |
 | SSE outbound | `*-events.controller.ts` + `*-stream.service.ts` | Push to browser — not in repository |
-| Messaging inbound | `*.handler.ts` | Thin `@EventPattern` — parse, idempotency, delegate |
-| Application | `*.service.ts` | Business logic / orchestration |
+| Messaging inbound | `*.handler.ts` | Thin `@EventPattern` — `Schema.parse(payload)`, idempotency, delegate |
+| Application | `*.service.ts` | Business logic / orchestration — receives typed input only |
 | Persistence | `*.repository.ts` + `in-memory-*.repository.ts` | Save / find / update — no messaging, no SSE |
-| Command publish | `messaging/*-command.publisher.ts` | RabbitMQ `emit()` behind interface |
-| Event publish | `messaging/*-event.publisher.ts` | Kafka `emit()` behind interface |
+| Command publish | `messaging/*-command.publisher.ts` | `Schema.parse(payload)` then RabbitMQ `emit()` |
+| Event publish | `messaging/*-event.publisher.ts` | `Schema.parse(event)` then Kafka `emit()` |
 | External HTTP | `gateways/*.gateway.ts` | Stripe, SendGrid — behind interface |
+
+**Zod rules (every microservice):**
+
+- HTTP body / route params → `SomeSchema.parse(...)` in the controller.
+- Kafka / RabbitMQ payload → `SomeSchema.parse(payload)` in the handler (`payload: unknown`).
+- Before publishing → `SomeSchema.parse(...)` in the publisher implementation.
+- Webhooks → schema in `@eda/contracts`, parse in the controller.
+- HTTP-only DTOs (e.g. `CreateOrderSchema`) → local `*.schema.ts` in the service; shared events/commands → `@eda/contracts`.
+- Register `ZodValidationExceptionFilter` in `main.ts` so HTTP parse errors return `400`.
 
 ---
 
@@ -1256,6 +1267,7 @@ pnpm lint:fix
 services/api-gateway/src/
 ├── orders/
 │   order.entity.ts
+│   create-order.schema.ts
 │   orders.repository.ts
 │   in-memory-orders.repository.ts
 │   orders.service.ts
@@ -1268,6 +1280,7 @@ services/api-gateway/src/
 ├── payment-events/
 │   payment-events.handler.ts
 └── common/
+    zod-validation.filter.ts
 ```
 
 ### Step 5.1 — Scaffold standalone project
@@ -1309,11 +1322,11 @@ In `services/api-gateway/package.json`, replace the `format` and `lint` scripts:
 "lint:fix": "biome check --write ."
 ```
 
-- [x] Install microservice dependencies (still from **`services/api-gateway/`**):
+- [ ] Install microservice dependencies (still from **`services/api-gateway/`**):
 
 ```bash
 cd api-gateway
-pnpm add @nestjs/platform-fastify @nestjs/microservices amqplib amqp-connection-manager kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices amqplib amqp-connection-manager kafkajs dotenv zod
 pnpm add -D @types/amqplib
 ```
 
@@ -1376,6 +1389,36 @@ export class IdempotencyStore {
 
   markProcessed(id: string): void {
     this.processed.add(id);
+  }
+}
+```
+
+- [x] Create `services/api-gateway/src/common/zod-validation.filter.ts`:
+
+```typescript
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpStatus,
+} from '@nestjs/common';
+import { FastifyReply } from 'fastify';
+import { ZodError } from 'zod';
+
+@Catch(ZodError)
+export class ZodValidationExceptionFilter implements ExceptionFilter {
+  catch(error: ZodError, host: ArgumentsHost) {
+    const response = host.switchToHttp().getResponse<FastifyReply>();
+
+    response.status(HttpStatus.BAD_REQUEST).send({
+      statusCode: HttpStatus.BAD_REQUEST,
+      error: 'Bad Request',
+      message: 'Validation failed',
+      issues: error.issues.map((issue) => ({
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
+    });
   }
 }
 ```
@@ -1460,17 +1503,29 @@ export interface Order {
   customerEmail: string;
   status: OrderStatus;
 }
+```
 
-export interface CreateOrderInput {
-  productId: string;
-  customerEmail: string;
-  amount: number;
-}
+### Step 5.3.1 — Create order schema (HTTP)
+
+- [x] Create `services/api-gateway/src/orders/create-order.schema.ts`:
+
+```typescript
+import { z } from 'zod';
+
+export const CreateOrderSchema = z.object({
+  productId: z.string().min(1),
+  customerEmail: z.string().email(),
+  amount: z.number().positive(),
+});
+
+export type CreateOrderInput = z.infer<typeof CreateOrderSchema>;
+
+export const OrderNumberParamSchema = z.string().uuid();
 ```
 
 ### Step 5.4 — Orders repository
 
-- [ ] Create `services/api-gateway/src/orders/orders.repository.ts`:
+- [x] Create `services/api-gateway/src/orders/orders.repository.ts`:
 
 ```typescript
 import { Order, OrderStatus } from './order.entity';
@@ -1484,7 +1539,7 @@ export interface OrdersRepository {
 }
 ```
 
-- [ ] Create `services/api-gateway/src/orders/in-memory-orders.repository.ts`:
+- [x] Create `services/api-gateway/src/orders/in-memory-orders.repository.ts`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -1514,7 +1569,7 @@ export class InMemoryOrdersRepository implements OrdersRepository {
 
 ### Step 5.5 — Order status stream (SSE)
 
-- [ ] Replace `services/api-gateway/src/orders/order-status-stream.service.ts`:
+- [x] Replace `services/api-gateway/src/orders/order-status-stream.service.ts`:
 
 ```typescript
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -1555,7 +1610,7 @@ export class OrderStatusStreamService {
 
 ### Step 5.6 — Payment command publisher
 
-- [ ] Create `services/api-gateway/src/messaging/payment-command.publisher.ts`:
+- [x] Create `services/api-gateway/src/messaging/payment-command.publisher.ts`:
 
 ```typescript
 import { PaymentRequested } from '@eda/contracts';
@@ -1567,12 +1622,16 @@ export interface PaymentCommandPublisher {
 }
 ```
 
-- [ ] Create `services/api-gateway/src/messaging/rabbitmq-payment-command.publisher.ts`:
+- [x] Create `services/api-gateway/src/messaging/rabbitmq-payment-command.publisher.ts`:
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { PaymentRequested, ROUTING_KEYS } from '@eda/contracts';
+import {
+  PaymentRequested,
+  PaymentRequestedSchema,
+  ROUTING_KEYS,
+} from '@eda/contracts';
 import { firstValueFrom } from 'rxjs';
 import { PaymentCommandPublisher } from './payment-command.publisher';
 
@@ -1583,8 +1642,9 @@ export class RabbitMqPaymentCommandPublisher implements PaymentCommandPublisher 
   ) {}
 
   async publishPaymentRequested(payload: PaymentRequested): Promise<void> {
+    const command = PaymentRequestedSchema.parse(payload);
     await firstValueFrom(
-      this.client.emit(ROUTING_KEYS.PAYMENT_REQUESTED, payload),
+      this.client.emit(ROUTING_KEYS.PAYMENT_REQUESTED, command),
     );
   }
 }
@@ -1592,7 +1652,7 @@ export class RabbitMqPaymentCommandPublisher implements PaymentCommandPublisher 
 
 ### Step 5.7 — Orders service
 
-- [ ] Replace `services/api-gateway/src/orders/orders.service.ts`:
+- [x] Replace `services/api-gateway/src/orders/orders.service.ts`:
 
 ```typescript
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
@@ -1601,7 +1661,8 @@ import {
   PAYMENT_COMMAND_PUBLISHER,
   PaymentCommandPublisher,
 } from '../messaging/payment-command.publisher';
-import { CreateOrderInput, Order, OrderStatus } from './order.entity';
+import { CreateOrderInput } from './create-order.schema';
+import { Order, OrderStatus } from './order.entity';
 import { OrderStatusStreamService } from './order-status-stream.service';
 import {
   ORDERS_REPOSITORY,
@@ -1664,10 +1725,11 @@ export class OrdersService {
 
 ### Step 5.8 — HTTP controllers
 
-- [ ] Replace `services/api-gateway/src/orders/orders.controller.ts`:
+- [x] Replace `services/api-gateway/src/orders/orders.controller.ts`:
 
 ```typescript
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { CreateOrderSchema, OrderNumberParamSchema } from './create-order.schema';
 import { OrdersService } from './orders.service';
 
 @Controller('orders')
@@ -1675,14 +1737,14 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
-  createOrder(
-    @Body() body: { productId: string; customerEmail: string; amount: number },
-  ) {
-    return this.ordersService.createOrder(body);
+  createOrder(@Body() body: unknown) {
+    const input = CreateOrderSchema.parse(body);
+    return this.ordersService.createOrder(input);
   }
 
   @Get(':orderNumber')
   getOrder(@Param('orderNumber') orderNumber: string) {
+    OrderNumberParamSchema.parse(orderNumber);
     return this.ordersService.getOrder(orderNumber);
   }
 }
@@ -1692,6 +1754,7 @@ export class OrdersController {
 
 ```typescript
 import { Controller, Param, Sse } from '@nestjs/common';
+import { OrderNumberParamSchema } from './create-order.schema';
 import { OrdersService } from './orders.service';
 import { OrderStatusStreamService } from './order-status-stream.service';
 
@@ -1704,6 +1767,7 @@ export class OrdersEventsController {
 
   @Sse(':orderNumber/events')
   stream(@Param('orderNumber') orderNumber: string) {
+    OrderNumberParamSchema.parse(orderNumber);
     this.ordersService.getOrder(orderNumber);
     return this.statusStream.watch(orderNumber);
   }
@@ -1712,7 +1776,7 @@ export class OrdersEventsController {
 
 ### Step 5.9 — Kafka handler (`payment-events.handler.ts`)
 
-- [ ] Replace `services/api-gateway/src/payment-events/payment-events.controller.ts` → rename file to `payment-events.handler.ts`:
+- [x] Replace `services/api-gateway/src/payment-events/payment-events.controller.ts` → rename file to `payment-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
@@ -1751,7 +1815,7 @@ export class PaymentEventsHandler {
 
 ### Step 5.10 — Wire modules (hybrid app)
 
-- [ ] Replace `services/api-gateway/src/orders/orders.module.ts`:
+- [x] Replace `services/api-gateway/src/orders/orders.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -1806,7 +1870,7 @@ import { OrdersService } from './orders.service';
 export class OrdersModule {}
 ```
 
-- [ ] Replace `services/api-gateway/src/app.module.ts`:
+- [x] Replace `services/api-gateway/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -1820,7 +1884,7 @@ import { OrdersModule } from './orders/orders.module';
 export class AppModule {}
 ```
 
-- [ ] Replace `services/api-gateway/src/main.ts`:
+- [x] Replace `services/api-gateway/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
@@ -1832,12 +1896,15 @@ import {
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
@@ -1865,7 +1932,7 @@ bootstrap().catch((err) => {
 
 ### Step 5.11 — Build and run
 
-- [ ] From **`services/api-gateway/`**:
+- [x] From **`services/api-gateway/`**:
 
 ```bash
 pnpm build
@@ -1877,13 +1944,13 @@ pnpm start:dev
 ### Checkpoint
 
 - `services/api-gateway` builds and runs from its own folder.
-- Flow: `POST /orders` → RabbitMQ command; Kafka `payment_succeeded` / `payment_failed` → repository update → SSE push.
+- Flow: `POST /orders` → Zod validates body → RabbitMQ command; Kafka `payment_succeeded` / `payment_failed` → Zod validates payload → repository update → SSE push.
 
 ### Suggested commit
 
 ```bash
 git add packages/contracts infra/kafka/init-topics.sh services/api-gateway
-git commit -m "feat: add api-gateway with repository, stream service, and messaging ports"
+git commit -m "feat: add api-gateway with zod validation, repository, and messaging ports"
 ```
 
 ---
@@ -1924,7 +1991,7 @@ pnpm remove eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser es
 pnpm add -D @biomejs/biome@2.5.0 --save-exact
 cp ../api-gateway/biome.json ./biome.json
 # update format/lint scripts in package.json — same as api-gateway
-pnpm add @nestjs/platform-fastify @nestjs/microservices amqplib amqp-connection-manager kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices amqplib amqp-connection-manager kafkajs dotenv zod
 pnpm add -D @types/amqplib
 pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
@@ -1947,6 +2014,46 @@ npx nest g service payment --no-spec
 npx nest g controller payment-consumer --no-spec
 npx nest g controller webhooks --no-spec
 mkdir -p src/gateways src/messaging
+```
+
+### Step 6.1.1 — Stripe webhook schema (`@eda/contracts`)
+
+- [ ] Create `packages/contracts/src/events/stripe-webhook.ts`:
+
+```typescript
+import { z } from 'zod';
+
+export const StripeWebhookDataSchema = z.object({
+  orderNumber: z.string().uuid(),
+  amount: z.number().positive(),
+  reserveId: z.string().uuid(),
+  customerEmail: z.string().email(),
+});
+
+export const StripeWebhookSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('payment_intent.succeeded'),
+    data: StripeWebhookDataSchema,
+  }),
+  z.object({
+    type: z.literal('payment_intent.payment_failed'),
+    data: StripeWebhookDataSchema,
+  }),
+]);
+
+export type StripeWebhook = z.infer<typeof StripeWebhookSchema>;
+```
+
+- [ ] Export from `packages/contracts/src/index.ts`:
+
+```typescript
+export * from './events/stripe-webhook';
+```
+
+- [ ] Rebuild contracts:
+
+```bash
+pnpm --filter @eda/contracts build
 ```
 
 ### Step 6.2 — Payment gateway
@@ -2014,7 +2121,13 @@ export interface DomainEventPublisher {
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
-import { PaymentFailed, PaymentSucceeded, TOPICS } from '@eda/contracts';
+import {
+  PaymentFailed,
+  PaymentFailedSchema,
+  PaymentSucceeded,
+  PaymentSucceededSchema,
+  TOPICS,
+} from '@eda/contracts';
 import { firstValueFrom } from 'rxjs';
 import { DomainEventPublisher } from './domain-event.publisher';
 
@@ -2031,11 +2144,13 @@ export class KafkaDomainEventPublisher
   }
 
   async publishPaymentSucceeded(event: PaymentSucceeded): Promise<void> {
-    await firstValueFrom(this.kafka.emit(TOPICS.PAYMENT_SUCCEEDED, event));
+    const payload = PaymentSucceededSchema.parse(event);
+    await firstValueFrom(this.kafka.emit(TOPICS.PAYMENT_SUCCEEDED, payload));
   }
 
   async publishPaymentFailed(event: PaymentFailed): Promise<void> {
-    await firstValueFrom(this.kafka.emit(TOPICS.PAYMENT_FAILED, event));
+    const payload = PaymentFailedSchema.parse(event);
+    await firstValueFrom(this.kafka.emit(TOPICS.PAYMENT_FAILED, payload));
   }
 
   async onModuleDestroy() {
@@ -2050,7 +2165,11 @@ export class KafkaDomainEventPublisher
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
-import { PaymentRequested } from '@eda/contracts';
+import {
+  PaymentRequested,
+  PaymentSucceededSchema,
+  StripeWebhook,
+} from '@eda/contracts';
 import {
   DOMAIN_EVENT_PUBLISHER,
   DomainEventPublisher,
@@ -2073,22 +2192,16 @@ export class PaymentService {
     await this.events.publishPaymentFailed({ orderNumber, reason });
   }
 
-  async handleStripeWebhook(body: {
-    type: string;
-    data: {
-      orderNumber: string;
-      amount: number;
-      reserveId: string;
-      customerEmail: string;
-    };
-  }): Promise<void> {
+  async handleStripeWebhook(body: StripeWebhook): Promise<void> {
     if (body.type === 'payment_intent.succeeded') {
-      await this.events.publishPaymentSucceeded({
-        reserveId: body.data.reserveId,
-        value: body.data.amount,
-        customerInfo: { email: body.data.customerEmail },
-        orderNumber: body.data.orderNumber,
-      });
+      await this.events.publishPaymentSucceeded(
+        PaymentSucceededSchema.parse({
+          reserveId: body.data.reserveId,
+          value: body.data.amount,
+          customerInfo: { email: body.data.customerEmail },
+          orderNumber: body.data.orderNumber,
+        }),
+      );
       return;
     }
 
@@ -2172,6 +2285,7 @@ export class PaymentConsumerHandler {
 
 ```typescript
 import { Body, Controller, Post } from '@nestjs/common';
+import { StripeWebhookSchema } from '@eda/contracts';
 import { PaymentService } from '../payment/payment.service';
 
 @Controller('webhooks')
@@ -2179,19 +2293,9 @@ export class WebhooksController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post('stripe')
-  async stripeWebhook(
-    @Body()
-    body: {
-      type: string;
-      data: {
-        orderNumber: string;
-        amount: number;
-        reserveId: string;
-        customerEmail: string;
-      };
-    },
-  ) {
-    await this.paymentService.handleStripeWebhook(body);
+  async stripeWebhook(@Body() body: unknown) {
+    const event = StripeWebhookSchema.parse(body);
+    await this.paymentService.handleStripeWebhook(event);
     return { received: true };
   }
 }
@@ -2274,6 +2378,7 @@ import {
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { EXCHANGES } from '@eda/contracts';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -2281,6 +2386,8 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.RMQ,
@@ -2321,13 +2428,13 @@ pnpm build
 ### Checkpoint
 
 - Payment service builds from its own folder.
-- Flow: RabbitMQ handler → `PaymentService` → `PaymentGateway`; webhook / Stripe error → `DomainEventPublisher` → Kafka.
+- Flow: RabbitMQ handler → Zod validates command → `PaymentService` → `PaymentGateway`; Stripe webhook → Zod validates body → `DomainEventPublisher` → Zod validates event → Kafka.
 
 ### Suggested commit
 
 ```bash
-git add services/payment
-git commit -m "feat: add payment service with gateway and event publisher ports"
+git add packages/contracts services/payment
+git commit -m "feat: add payment service with zod validation, gateway, and event publisher ports"
 ```
 
 ---
@@ -2360,7 +2467,7 @@ cd availability
 rm .eslintrc.js .prettierrc
 pnpm remove eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint-config-prettier eslint-plugin-prettier prettier
 pnpm add -D @biomejs/biome@2.5.0 --save-exact
-pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv zod
 pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
 cp ../api-gateway/biome.json ./biome.json
@@ -2525,6 +2632,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -2532,6 +2640,8 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
@@ -2609,7 +2719,7 @@ cd analytics
 rm .eslintrc.js .prettierrc
 pnpm remove eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint-config-prettier eslint-plugin-prettier prettier
 pnpm add -D @biomejs/biome@2.5.0 --save-exact
-pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv zod
 pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
 cp ../api-gateway/biome.json ./biome.json
@@ -2798,6 +2908,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -2805,6 +2916,8 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
@@ -2883,7 +2996,7 @@ cd invoice
 rm .eslintrc.js .prettierrc
 pnpm remove eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint-config-prettier eslint-plugin-prettier prettier
 pnpm add -D @biomejs/biome@2.5.0 --save-exact
-pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv zod
 pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
 cp ../api-gateway/biome.json ./biome.json
@@ -2925,7 +3038,7 @@ export interface DomainEventPublisher {
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
-import { InvoiceCreated, TOPICS } from '@eda/contracts';
+import { InvoiceCreated, InvoiceCreatedSchema, TOPICS } from '@eda/contracts';
 import { firstValueFrom } from 'rxjs';
 import { DomainEventPublisher } from './domain-event.publisher';
 
@@ -2942,7 +3055,8 @@ export class KafkaDomainEventPublisher
   }
 
   async publishInvoiceCreated(event: InvoiceCreated): Promise<void> {
-    await firstValueFrom(this.kafka.emit(TOPICS.INVOICE_CREATED, event));
+    const payload = InvoiceCreatedSchema.parse(event);
+    await firstValueFrom(this.kafka.emit(TOPICS.INVOICE_CREATED, payload));
   }
 
   async onModuleDestroy() {
@@ -2957,7 +3071,10 @@ export class KafkaDomainEventPublisher
 
 ```typescript
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { PaymentSucceeded } from '@eda/contracts';
+import {
+  InvoiceCreatedSchema,
+  PaymentSucceeded,
+} from '@eda/contracts';
 import { randomUUID } from 'crypto';
 import {
   DOMAIN_EVENT_PUBLISHER,
@@ -2977,12 +3094,14 @@ export class InvoiceService {
     const invoiceId = randomUUID();
     this.logger.log(`Creating invoice ${invoiceId} for order ${event.orderNumber}`);
 
-    await this.events.publishInvoiceCreated({
-      invoiceId,
-      value: event.value,
-      customerInfo: event.customerInfo,
-      orderNumber: event.orderNumber,
-    });
+    await this.events.publishInvoiceCreated(
+      InvoiceCreatedSchema.parse({
+        invoiceId,
+        value: event.value,
+        customerInfo: event.customerInfo,
+        orderNumber: event.orderNumber,
+      }),
+    );
   }
 }
 ```
@@ -3090,6 +3209,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -3097,6 +3217,8 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
@@ -3175,7 +3297,7 @@ cd notification
 rm .eslintrc.js .prettierrc
 pnpm remove eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint-config-prettier eslint-plugin-prettier prettier
 pnpm add -D @biomejs/biome@2.5.0 --save-exact
-pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv
+pnpm add @nestjs/platform-fastify @nestjs/microservices kafkajs dotenv zod
 pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
 cp ../api-gateway/biome.json ./biome.json
@@ -3368,6 +3490,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { requireEnv } from './common/env';
+import { ZodValidationExceptionFilter } from './common/zod-validation.filter';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -3375,6 +3498,8 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  app.useGlobalFilters(new ZodValidationExceptionFilter());
 
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.KAFKA,
@@ -3751,6 +3876,18 @@ curl -s -X POST http://localhost:3000/orders \
 
 - [ ] Copy the `orderNumber` value.
 
+### Step 12.2.1 — Verify Zod rejects invalid input (optional)
+
+- [ ] Send a bad payload:
+
+```bash
+curl -s -X POST http://localhost:3000/orders \
+  -H 'content-type: application/json' \
+  -d '{"productId":"","customerEmail":"not-an-email","amount":-1}'
+```
+
+**Expected:** HTTP `400` with `{ "statusCode": 400, "message": "Validation failed", "issues": [...] }`.
+
 ### Step 12.3 — Stream SSE for that order (terminal 1)
 
 - [ ] Run with your actual order number:
@@ -3837,6 +3974,7 @@ No code changes — optionally document your test order number in personal notes
 
 ### Application
 
+- [ ] **Input validation:** Keep Zod at HTTP, webhook, and messaging boundaries; evolve schemas in `@eda/contracts` with versioned compatibility rules
 - [ ] **Idempotency:** Replace in-memory `IdempotencyStore` with Redis or PostgreSQL
 - [ ] **Schema Registry:** Confluent Schema Registry or Apicurio for Avro/Protobuf evolution
 - [ ] **Outbox pattern:** Transactional outbox for reliable publish-after-db-write
