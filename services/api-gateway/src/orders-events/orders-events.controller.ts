@@ -3,7 +3,7 @@ import { OrderNumberParamSchema } from 'src/orders/create-order.schema'
 import { OrderStatusStreamService } from 'src/orders/order-status-stream.service'
 import { OrdersService } from 'src/orders/orders.service'
 
-@Controller('orders-events')
+@Controller('orders')
 export class OrdersEventsController {
 	constructor(
 		private readonly ordersService: OrdersService,
