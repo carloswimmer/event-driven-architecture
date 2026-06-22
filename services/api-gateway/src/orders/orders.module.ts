@@ -19,6 +19,7 @@ const clientsRegister = ClientsModule.register([
 		options: {
 			urls: [requireEnv('RABBITMQ_URL')],
 			queue: 'orders.payment.requested',
+			noAssert: true,
 			queueOptions: { durable: true },
 			wildcards: true,
 			exchange: EXCHANGES.COMMANDS,
