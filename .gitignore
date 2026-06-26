@@ -67,3 +67,6 @@ temp/
 # Optional local tooling
 .turbo/
 .nx/
+
+# Git worktrees (isolated feature branches)
+.worktrees/
