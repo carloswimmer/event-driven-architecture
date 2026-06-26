@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common'
 
 @Injectable()
-export class PaymentService {}
+export class PaymentService {
+	public async processPaymentRequested(data: unknown) {}
+
+	public async publishPaymentFailed(orderNumber: string, type: string) {}
+}

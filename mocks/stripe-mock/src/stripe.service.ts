@@ -21,7 +21,7 @@ export class StripeService {
 
 		setTimeout(() => {
 			void this.sendWebhook(body)
-		}, 500)
+		}, 2000)
 
 		return { id: intentId, status: 'processing' }
 	}

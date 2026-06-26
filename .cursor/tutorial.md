@@ -2217,7 +2217,7 @@ export class PaymentService {
 
 ### Step 6.5 — RabbitMQ handler (thin)
 
-- [ ] Replace `services/payment/src/payment-consumer/payment-consumer.controller.ts` → rename to `payment-consumer.handler.ts`:
+- [x] Replace `services/payment/src/payment-consumer/payment-consumer.controller.ts` → rename to `payment-consumer.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
@@ -2406,7 +2406,7 @@ async function bootstrap() {
   await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3010);
   await app.listen(port, '0.0.0.0');
-  console.log(`payment-service listening on ${port}`);
+  console.log(`💰 payment-service listening on ${port}`);
 }
 
 bootstrap().catch((err) => {
