@@ -1322,7 +1322,7 @@ In `services/api-gateway/package.json`, replace the `format` and `lint` scripts:
 "lint:fix": "biome check --write ."
 ```
 
-- [ ] Install microservice dependencies (still from **`services/api-gateway/`**):
+- [x] Install microservice dependencies (still from **`services/api-gateway/`**):
 
 ```bash
 cd api-gateway
@@ -1750,7 +1750,7 @@ export class OrdersController {
 }
 ```
 
-- [ ] Replace `services/api-gateway/src/orders/orders-events.controller.ts`:
+- [x] Replace `services/api-gateway/src/orders/orders-events.controller.ts`:
 
 ```typescript
 import { Controller, Param, Sse } from '@nestjs/common';
@@ -1980,7 +1980,7 @@ services/payment/src/
 
 ### Step 6.1 — Scaffold standalone project
 
-- [ ] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
+- [x] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
 
 ```bash
 cd services
@@ -1997,7 +1997,7 @@ pnpm add @eda/contracts@file:../../packages/contracts
 cp -r ../api-gateway/src/common ./src/common
 ```
 
-- [ ] Create `services/payment/.env`:
+- [x] Create `services/payment/.env`:
 
 ```bash
 PORT=3010
@@ -2006,7 +2006,7 @@ KAFKA_BROKERS=localhost:9094
 STRIPE_MOCK_URL=http://localhost:3001
 ```
 
-- [ ] Scaffold modules (from **`services/payment/`**):
+- [x] Scaffold modules (from **`services/payment/`**):
 
 ```bash
 npx nest g module payment --no-spec
@@ -2018,7 +2018,7 @@ mkdir -p src/gateways src/messaging
 
 ### Step 6.1.1 — Stripe webhook schema (`@eda/contracts`)
 
-- [ ] Create `packages/contracts/src/events/stripe-webhook.ts`:
+- [x] Create `packages/contracts/src/events/stripe-webhook.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -2044,13 +2044,13 @@ export const StripeWebhookSchema = z.discriminatedUnion('type', [
 export type StripeWebhook = z.infer<typeof StripeWebhookSchema>;
 ```
 
-- [ ] Export from `packages/contracts/src/index.ts`:
+- [x] Export from `packages/contracts/src/index.ts`:
 
 ```typescript
 export * from './events/stripe-webhook';
 ```
 
-- [ ] Rebuild contracts:
+- [x] Rebuild contracts:
 
 ```bash
 pnpm --filter @eda/contracts build

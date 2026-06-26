@@ -27,8 +27,12 @@ export class StripeService {
 	}
 
 	private async sendWebhook(body: CreatePaymentIntentRequestDto) {
+		// to test payment failed, we use the strategy of 'amount ready to fail' (777)
 		const payload = {
-			type: 'payment_intent.succeeded',
+			type:
+				body.amount === 777
+					? 'payment_intent.payment_failed'
+					: 'payment_intent.succeeded',
 			data: { ...body },
 		}
 
