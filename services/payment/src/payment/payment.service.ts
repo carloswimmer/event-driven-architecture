@@ -1,8 +1,57 @@
-import { Injectable } from '@nestjs/common'
+import {
+	PaymentFailedSchema,
+	PaymentRequested,
+	PaymentSucceededSchema,
+	StripeWebhook,
+} from '@eda/contracts'
+import { Inject, Injectable } from '@nestjs/common'
+import { PAYMENT_GATEWAY, PaymentGateway } from 'src/gateways/payment.gateway'
+import {
+	DOMAIN_EVENT_PUBLISHER,
+	DomainEventPublisher,
+} from 'src/messaging/domain-event.publisher'
 
 @Injectable()
 export class PaymentService {
-	public async processPaymentRequested(data: unknown) {}
+	constructor(
+		@Inject(PAYMENT_GATEWAY) private readonly paymentGateway: PaymentGateway,
+		@Inject(DOMAIN_EVENT_PUBLISHER)
+		private readonly events: DomainEventPublisher,
+	) {}
 
-	public async publishPaymentFailed(orderNumber: string, type: string) {}
+	public async processPaymentRequested(data: PaymentRequested): Promise<void> {
+		await this.paymentGateway.createPaymentIntent(data)
+	}
+
+	public async publishPaymentFailed(
+		orderNumber: string,
+		reason: string,
+	): Promise<void> {
+		await this.events.publishPaymentFailed({ orderNumber, reason })
+	}
+
+	public async handleStripeWebhook({
+		data,
+		type,
+	}: StripeWebhook): Promise<void> {
+		if (type === 'payment_intent.succeeded') {
+			const { value, customerInfo, orderNumber, reserveId } =
+				PaymentSucceededSchema.parse(data)
+
+			await this.events.publishPaymentSucceeded({
+				customerInfo,
+				orderNumber,
+				reserveId,
+				value,
+			})
+		}
+
+		if (type === 'payment_intent.payment_failed') {
+			const { orderNumber } = PaymentFailedSchema.parse(data)
+			await this.events.publishPaymentFailed({
+				orderNumber,
+				reason: 'payment_intent.payment_failed',
+			})
+		}
+	}
 }

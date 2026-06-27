@@ -24,8 +24,8 @@ export class PaymentConsumerHandler {
 	) {
 		const channel = context.getChannelRef()
 		const message = context.getMessage()
-		console.log('channel', channel)
-		console.log('message', message)
+		console.log('⁉️ CHANNEL', channel)
+		console.log('⁉️ MESSAGE', message)
 
 		try {
 			const data = PaymentRequestedSchema.parse(payload)

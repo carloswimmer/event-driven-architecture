@@ -2056,9 +2056,9 @@ export * from './events/stripe-webhook';
 pnpm --filter @eda/contracts build
 ```
 
-### Step 6.2 — Payment gateway
+### Step 6.2 — Payment gateway  
 
-- [ ] Create `services/payment/src/gateways/payment.gateway.ts`:
+- [x] Create `services/payment/src/gateways/payment.gateway.ts`:
 
 ```typescript
 import { PaymentRequested } from '@eda/contracts';
@@ -2070,7 +2070,7 @@ export interface PaymentGateway {
 }
 ```
 
-- [ ] Create `services/payment/src/gateways/stripe-payment.gateway.ts`:
+- [x] Create `services/payment/src/gateways/stripe-payment.gateway.ts`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -2103,7 +2103,7 @@ export class StripePaymentGateway implements PaymentGateway {
 
 ### Step 6.3 — Domain event publisher
 
-- [ ] Create `services/payment/src/messaging/domain-event.publisher.ts`:
+- [x] Create `services/payment/src/messaging/domain-event.publisher.ts`:
 
 ```typescript
 import { PaymentFailed, PaymentSucceeded } from '@eda/contracts';
@@ -2116,7 +2116,7 @@ export interface DomainEventPublisher {
 }
 ```
 
-- [ ] Create `services/payment/src/messaging/kafka-domain-event.publisher.ts`:
+- [x] Create `services/payment/src/messaging/kafka-domain-event.publisher.ts`:
 
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
@@ -2161,7 +2161,7 @@ export class KafkaDomainEventPublisher
 
 ### Step 6.4 — Payment service
 
-- [ ] Replace `services/payment/src/payment/payment.service.ts`:
+- [x] Replace `services/payment/src/payment/payment.service.ts`:
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
