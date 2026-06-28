@@ -2120,7 +2120,7 @@ export interface DomainEventPublisher {
 
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
+import { ClientKafka, ClientKafka } from '@nestjs/microservices';
 import {
   PaymentFailed,
   PaymentFailedSchema,
@@ -2136,11 +2136,11 @@ export class KafkaDomainEventPublisher
   implements DomainEventPublisher, OnModuleInit, OnModuleDestroy
 {
   constructor(
-    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafkaProxy,
+    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafka,
   ) {}
 
   async onModuleInit() {
-    await (this.kafka as ClientKafka).connect();
+    await (this.kafka).connect();
   }
 
   async publishPaymentSucceeded(event: PaymentSucceeded): Promise<void> {
@@ -2154,7 +2154,7 @@ export class KafkaDomainEventPublisher
   }
 
   async onModuleDestroy() {
-    await (this.kafka as ClientKafka).close();
+    await (this.kafka).close();
   }
 }
 ```
@@ -2281,7 +2281,7 @@ export class PaymentConsumerHandler {
 
 ### Step 6.6 — Webhook controller (thin)
 
-- [ ] Replace `services/payment/src/webhooks/webhooks.controller.ts`:
+- [x] Replace `services/payment/src/webhooks/webhooks.controller.ts`:
 
 ```typescript
 import { Body, Controller, Post } from '@nestjs/common';
@@ -2303,7 +2303,7 @@ export class WebhooksController {
 
 ### Step 6.7 — Wire modules (hybrid app)
 
-- [ ] Replace `services/payment/src/payment/payment.module.ts`:
+- [x] Replace `services/payment/src/payment/payment.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2352,7 +2352,7 @@ import { PaymentService } from './payment.service';
 export class PaymentModule {}
 ```
 
-- [ ] Replace `services/payment/src/app.module.ts`:
+- [x] Replace `services/payment/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2366,7 +2366,7 @@ import { PaymentModule } from './payment/payment.module';
 export class AppModule {}
 ```
 
-- [ ] Replace `services/payment/src/main.ts`:
+- [x] Replace `services/payment/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
@@ -3037,7 +3037,7 @@ export interface DomainEventPublisher {
 
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { ClientKafka, ClientKafkaProxy } from '@nestjs/microservices';
+import { ClientKafka, ClientKafka } from '@nestjs/microservices';
 import { InvoiceCreated, InvoiceCreatedSchema, TOPICS } from '@eda/contracts';
 import { firstValueFrom } from 'rxjs';
 import { DomainEventPublisher } from './domain-event.publisher';
@@ -3047,11 +3047,11 @@ export class KafkaDomainEventPublisher
   implements DomainEventPublisher, OnModuleInit, OnModuleDestroy
 {
   constructor(
-    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafkaProxy,
+    @Inject('KAFKA_SERVICE') private readonly kafka: ClientKafka,
   ) {}
 
   async onModuleInit() {
-    await (this.kafka as ClientKafka).connect();
+    await (this.kafka).connect();
   }
 
   async publishInvoiceCreated(event: InvoiceCreated): Promise<void> {
@@ -3060,7 +3060,7 @@ export class KafkaDomainEventPublisher
   }
 
   async onModuleDestroy() {
-    await (this.kafka as ClientKafka).close();
+    await (this.kafka).close();
   }
 }
 ```

@@ -35,23 +35,26 @@ export class PaymentService {
 		type,
 	}: StripeWebhook): Promise<void> {
 		if (type === 'payment_intent.succeeded') {
-			const { value, customerInfo, orderNumber, reserveId } =
-				PaymentSucceededSchema.parse(data)
+			const { amount, customerInfo, orderNumber, reserveId } =
+				PaymentSucceededSchema.parse({
+					...data,
+					customerInfo: { email: data.customerEmail },
+				})
 
 			await this.events.publishPaymentSucceeded({
 				customerInfo,
 				orderNumber,
 				reserveId,
-				value,
+				amount,
 			})
 		}
 
 		if (type === 'payment_intent.payment_failed') {
-			const { orderNumber } = PaymentFailedSchema.parse(data)
-			await this.events.publishPaymentFailed({
-				orderNumber,
+			const payload = PaymentFailedSchema.parse({
+				...data,
 				reason: 'payment_intent.payment_failed',
 			})
+			await this.events.publishPaymentFailed(payload)
 		}
 	}
 }

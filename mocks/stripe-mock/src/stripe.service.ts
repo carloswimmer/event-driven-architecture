@@ -21,22 +21,24 @@ export class StripeService {
 
 		setTimeout(() => {
 			void this.sendWebhook(body)
-		}, 2000)
+		}, 20000)
 
 		return { id: intentId, status: 'processing' }
 	}
 
 	private async sendWebhook(body: CreatePaymentIntentRequestDto) {
 		// to test payment failed, we use the strategy of 'amount ready to fail' (777)
+		const payloadType =
+			body.amount === 777
+				? 'payment_intent.payment_failed'
+				: 'payment_intent.succeeded'
+
 		const payload = {
-			type:
-				body.amount === 777
-					? 'payment_intent.payment_failed'
-					: 'payment_intent.succeeded',
+			type: payloadType,
 			data: { ...body },
 		}
 
-		this.logger.log(`Sending webhook to ${this.webhookUrl}`)
+		this.logger.log(`Sending webhook to ${this.webhookUrl} as ${payloadType}`)
 
 		const response = await fetch(this.webhookUrl, {
 			method: 'POST',

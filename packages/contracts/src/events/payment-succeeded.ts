@@ -6,7 +6,7 @@ export const CustomerInfoSchema = z.object({
 
 export const PaymentSucceededSchema = z.object({
 	reserveId: z.string().uuid(),
-	value: z.number().positive(),
+	amount: z.number().positive(),
 	customerInfo: CustomerInfoSchema,
 	orderNumber: z.string().uuid(),
 })

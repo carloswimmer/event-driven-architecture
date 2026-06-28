@@ -4,7 +4,7 @@ export const StripeWebhookDataSchema = z.object({
 	orderNumber: z.string().uuid(),
 	amount: z.number().positive(),
 	reserveId: z.string().uuid(),
-	customerEmal: z.string().email(),
+	customerEmail: z.string().email(),
 })
 
 export const StripeWebhookSchema = z.discriminatedUnion('type', [

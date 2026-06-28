@@ -17,7 +17,7 @@ async function bootstrap() {
 	)
 	const port = Number(process.env.PORT ?? 3001)
 	await app.listen(port, '0.0.0.0')
-	console.log(`stripe-mock listening on ${port}`)
+	console.log(`🏦 stripe-mock listening on ${port}`)
 }
 
 bootstrap().catch((err) => {

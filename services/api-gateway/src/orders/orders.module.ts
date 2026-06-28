@@ -12,7 +12,7 @@ import { OrdersController } from './orders.controller'
 import { ORDERS_REPOSITORY } from './orders.repository'
 import { OrdersService } from './orders.service'
 
-const clientsRegister = ClientsModule.register([
+const rabbitmqRegister = ClientsModule.register([
 	{
 		name: 'RABBITMQ_COMMANDS',
 		transport: Transport.RMQ,
@@ -29,7 +29,7 @@ const clientsRegister = ClientsModule.register([
 ])
 
 @Module({
-	imports: [clientsRegister],
+	imports: [rabbitmqRegister],
 	controllers: [OrdersController, OrdersEventsController, PaymentEventsHandler],
 	providers: [
 		OrdersService,
