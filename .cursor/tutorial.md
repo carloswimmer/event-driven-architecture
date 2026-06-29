@@ -2458,7 +2458,7 @@ services/availability/src/
 
 ### Step 7.1 — Scaffold standalone project
 
-- [ ] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
+- [x] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
 
 ```bash
 cd services
@@ -2474,14 +2474,14 @@ cp ../api-gateway/biome.json ./biome.json
 # update format/lint scripts in package.json — same as api-gateway
 ```
 
-- [ ] Create `services/availability/.env`:
+- [x] Create `services/availability/.env`:
 
 ```bash
 PORT=3020
 KAFKA_BROKERS=localhost:9094
 ```
 
-- [ ] Scaffold modules (from **`services/availability/`**):
+- [x] Scaffold modules (from **`services/availability/`**):
 
 ```bash
 npx nest g module availability --no-spec
