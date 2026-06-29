@@ -55,6 +55,7 @@ export class PaymentConsumerHandler {
 			this.logger.error('Stripe call failed', error)
 			await this.paymentService.publishPaymentFailed(
 				data.orderNumber,
+				data.reserveId,
 				'stripe_error',
 			)
 		}

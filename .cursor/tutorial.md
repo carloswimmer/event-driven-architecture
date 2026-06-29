@@ -2583,7 +2583,7 @@ export class PaymentEventsHandler {
 
 ### Step 7.5 — Wire modules and hybrid main
 
-- [ ] Replace `services/availability/src/availability.module.ts`:
+- [x] Replace `services/availability/src/availability.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2607,7 +2607,7 @@ import { PaymentEventsHandler } from './payment-events/payment-events.handler';
 export class AvailabilityModule {}
 ```
 
-- [ ] Create `services/availability/src/app.module.ts`:
+- [x] Create `services/availability/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2621,7 +2621,7 @@ import { AvailabilityModule } from './availability.module';
 export class AppModule {}
 ```
 
-- [ ] Create `services/availability/src/main.ts`:
+- [x] Create `services/availability/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
@@ -2669,7 +2669,7 @@ bootstrap().catch((err) => {
 
 ### Step 7.6 — Build
 
-- [ ] From **`services/availability/`**:
+- [x] From **`services/availability/`**:
 
 ```bash
 pnpm build

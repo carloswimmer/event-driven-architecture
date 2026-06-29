@@ -25,9 +25,10 @@ export class PaymentService {
 
 	public async publishPaymentFailed(
 		orderNumber: string,
+		reserveId: string,
 		reason: string,
 	): Promise<void> {
-		await this.events.publishPaymentFailed({ orderNumber, reason })
+		await this.events.publishPaymentFailed({ orderNumber, reserveId, reason })
 	}
 
 	public async handleStripeWebhook({
