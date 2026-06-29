@@ -2987,7 +2987,7 @@ services/invoice/src/
 
 ### Step 9.1 — Scaffold standalone project
 
-- [ ] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
+- [x] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
 
 ```bash
 cd services
@@ -3003,14 +3003,14 @@ cp ../api-gateway/biome.json ./biome.json
 # update format/lint scripts in package.json — same as api-gateway
 ```
 
-- [ ] Create `services/invoice/.env`:
+- [x] Create `services/invoice/.env`:
 
 ```bash
 PORT=3040
 KAFKA_BROKERS=localhost:9094
 ```
 
-- [ ] Scaffold modules (from **`services/invoice/`**):
+- [x] Scaffold modules (from **`services/invoice/`**):
 
 ```bash
 npx nest g module invoice --no-spec
@@ -3021,7 +3021,7 @@ mkdir -p src/messaging src/payment-events
 
 ### Step 9.2 — Domain event publisher
 
-- [ ] Create `services/invoice/src/messaging/domain-event.publisher.ts`:
+- [x] Create `services/invoice/src/messaging/domain-event.publisher.ts`:
 
 ```typescript
 import { InvoiceCreated } from '@eda/contracts';
@@ -3033,7 +3033,7 @@ export interface DomainEventPublisher {
 }
 ```
 
-- [ ] Create `services/invoice/src/messaging/kafka-domain-event.publisher.ts`:
+- [x] Create `services/invoice/src/messaging/kafka-domain-event.publisher.ts`:
 
 ```typescript
 import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
@@ -3067,7 +3067,7 @@ export class KafkaDomainEventPublisher
 
 ### Step 9.3 — Invoice service
 
-- [ ] Replace `services/invoice/src/invoice/invoice.service.ts`:
+- [x] Replace `services/invoice/src/invoice/invoice.service.ts`:
 
 ```typescript
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -3108,7 +3108,7 @@ export class InvoiceService {
 
 ### Step 9.4 — Kafka handler (thin)
 
-- [ ] Replace `services/invoice/src/payment-events/payment-events.controller.ts` → rename to `payment-events.handler.ts`:
+- [x] Replace `services/invoice/src/payment-events/payment-events.controller.ts` → rename to `payment-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
@@ -3143,7 +3143,7 @@ export class PaymentEventsHandler {
 
 ### Step 9.5 — Wire modules and hybrid main
 
-- [ ] Replace `services/invoice/src/invoice/invoice.module.ts`:
+- [x] Replace `services/invoice/src/invoice/invoice.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3184,7 +3184,7 @@ import { InvoiceService } from './invoice.service';
 export class InvoiceModule {}
 ```
 
-- [ ] Create `services/invoice/src/app.module.ts`:
+- [x] Create `services/invoice/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3198,7 +3198,7 @@ import { InvoiceModule } from './invoice/invoice.module';
 export class AppModule {}
 ```
 
-- [ ] Create `services/invoice/src/main.ts`:
+- [x] Create `services/invoice/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
@@ -3246,7 +3246,7 @@ bootstrap().catch((err) => {
 
 ### Step 9.6 — Build
 
-- [ ] From **`services/invoice/`**:
+- [x] From **`services/invoice/`**:
 
 ```bash
 pnpm build
