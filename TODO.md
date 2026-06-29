@@ -17,3 +17,7 @@
 ## Deploy
 
 - [ ] AWS - SQS / SNS
+
+## Requisites
+
+- [ ] Filter list events from analytics by date range

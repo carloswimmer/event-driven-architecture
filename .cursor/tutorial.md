@@ -2710,7 +2710,7 @@ services/analytics/src/
 
 ### Step 8.1 — Scaffold standalone project
 
-- [ ] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
+- [x] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
 
 ```bash
 cd services
@@ -2726,14 +2726,14 @@ cp ../api-gateway/biome.json ./biome.json
 # update format/lint scripts in package.json — same as api-gateway
 ```
 
-- [ ] Create `services/analytics/.env`:
+- [x] Create `services/analytics/.env`:
 
 ```bash
 PORT=3030
 KAFKA_BROKERS=localhost:9094
 ```
 
-- [ ] Scaffold modules (from **`services/analytics/`**):
+- [x] Scaffold modules (from **`services/analytics/`**):
 
 ```bash
 npx nest g module analytics --no-spec
@@ -2745,7 +2745,7 @@ mkdir -p src/events src/kafka-events
 
 ### Step 8.2 — Events repository + service + HTTP controller
 
-- [ ] Create `services/analytics/src/events/events.repository.ts`:
+- [x] Create `services/analytics/src/events/events.repository.ts`:
 
 ```typescript
 export interface StoredEvent {
@@ -2762,7 +2762,7 @@ export interface EventsRepository {
 }
 ```
 
-- [ ] Create `services/analytics/src/events/in-memory-events.repository.ts`:
+- [x] Create `services/analytics/src/events/in-memory-events.repository.ts`:
 
 ```typescript
 import { Injectable } from '@nestjs/common';
@@ -2782,7 +2782,7 @@ export class InMemoryEventsRepository implements EventsRepository {
 }
 ```
 
-- [ ] Create `services/analytics/src/events/events.service.ts` (delete scaffolded `src/events.service.ts` if present):
+- [x] Create `services/analytics/src/events/events.service.ts` (delete scaffolded `src/events.service.ts` if present):
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
@@ -2805,7 +2805,7 @@ export class EventsService {
 }
 ```
 
-- [ ] Create `services/analytics/src/events/events.controller.ts` (delete scaffolded `src/events.controller.ts` if present):
+- [x] Create `services/analytics/src/events/events.controller.ts` (delete scaffolded `src/events.controller.ts` if present):
 
 ```typescript
 import { Controller, Get } from '@nestjs/common';
@@ -2824,7 +2824,7 @@ export class EventsController {
 
 ### Step 8.3 — Kafka handlers (thin)
 
-- [ ] Replace `services/analytics/src/kafka-events/kafka-events.controller.ts` → rename to `kafka-events.handler.ts`:
+- [x] Replace `services/analytics/src/kafka-events/kafka-events.controller.ts` → rename to `kafka-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
@@ -2860,7 +2860,7 @@ export class KafkaEventsHandler {
 
 ### Step 8.4 — Wire modules and hybrid main
 
-- [ ] Replace `services/analytics/src/analytics.module.ts`:
+- [x] Replace `services/analytics/src/analytics.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2883,7 +2883,7 @@ import { KafkaEventsHandler } from './kafka-events/kafka-events.handler';
 export class AnalyticsModule {}
 ```
 
-- [ ] Create `services/analytics/src/app.module.ts`:
+- [x] Create `services/analytics/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2897,7 +2897,7 @@ import { AnalyticsModule } from './analytics.module';
 export class AppModule {}
 ```
 
-- [ ] Create `services/analytics/src/main.ts`:
+- [x] Create `services/analytics/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
