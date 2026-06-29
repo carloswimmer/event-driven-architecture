@@ -2492,7 +2492,7 @@ mkdir -p src/inventory
 
 ### Step 7.2 — Inventory repository
 
-- [ ] Create `services/availability/src/inventory/inventory.repository.ts`:
+- [x] Create `services/availability/src/inventory/inventory.repository.ts`:
 
 ```typescript
 export const INVENTORY_REPOSITORY = Symbol('INVENTORY_REPOSITORY');
@@ -2502,7 +2502,7 @@ export interface InventoryRepository {
 }
 ```
 
-- [ ] Create `services/availability/src/inventory/in-memory-inventory.repository.ts`:
+- [x] Create `services/availability/src/inventory/in-memory-inventory.repository.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -2524,7 +2524,7 @@ export class InMemoryInventoryRepository implements InventoryRepository {
 
 ### Step 7.3 — Inventory service
 
-- [ ] Create `services/availability/src/inventory/inventory.service.ts` (delete scaffolded `src/inventory.service.ts` if present):
+- [x] Create `services/availability/src/inventory/inventory.service.ts` (delete scaffolded `src/inventory.service.ts` if present):
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
@@ -2548,7 +2548,7 @@ export class InventoryService {
 
 ### Step 7.4 — Kafka handler (thin)
 
-- [ ] Replace `services/availability/src/payment-events/payment-events.controller.ts` → rename to `payment-events.handler.ts`:
+- [x] Replace `services/availability/src/payment-events/payment-events.controller.ts` → rename to `payment-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';

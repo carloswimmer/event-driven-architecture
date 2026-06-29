@@ -4,7 +4,7 @@
 
 - [ ] Redis to idempotency
 - [ ] Datadog to analytics
-- [ ] Postgres to inventory
+- [ ] Postgres to inventory (create availability in ApiGateway. Include availability when addToCart with status 'reseved')
 
 ## Tests
 
