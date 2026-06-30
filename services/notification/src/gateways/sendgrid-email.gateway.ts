@@ -14,9 +14,11 @@ export class SendGridEmailGateway implements EmailGateway {
 	): Promise<void> {
 		const response = await fetch(`${this.baseUrl}/v3/mail/send`, {
 			method: 'POST',
-			headers: { 'content-type': 'aplication/json' },
+			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({
-				personalizations: [{ to: [{ email }] }],
+				personalizations: [
+					{ to: [{ email }], custom_args: { invoiceId, orderNumber } },
+				],
 				from: { email: 'noreply@eda.local' },
 				subject: `Invoice ${invoiceId} for order ${orderNumber}`,
 				content: [
