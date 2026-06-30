@@ -3288,7 +3288,7 @@ services/notification/src/
 
 ### Step 10.1 — Scaffold standalone project
 
-- [ ] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
+- [x] Scaffold and configure (same pattern as [Phase 5 Step 5.1](#step-51--scaffold-standalone-project), including [Biome swap](#biome-instead-of-eslintprettier-every-microservice)):
 
 ```bash
 cd services
@@ -3304,7 +3304,7 @@ cp ../api-gateway/biome.json ./biome.json
 # update format/lint scripts in package.json — same as api-gateway
 ```
 
-- [ ] Create `services/notification/.env`:
+- [x] Create `services/notification/.env`:
 
 ```bash
 PORT=3050
@@ -3312,7 +3312,7 @@ KAFKA_BROKERS=localhost:9094
 SENDGRID_MOCK_URL=http://localhost:3002
 ```
 
-- [ ] Scaffold modules (from **`services/notification/`**):
+- [x] Scaffold modules (from **`services/notification/`**):
 
 ```bash
 npx nest g module notification --no-spec
@@ -3323,7 +3323,7 @@ mkdir -p src/gateways src/invoice-events
 
 ### Step 10.2 — Email gateway
 
-- [ ] Create `services/notification/src/gateways/email.gateway.ts`:
+- [x] Create `services/notification/src/gateways/email.gateway.ts`:
 
 ```typescript
 export const EMAIL_GATEWAY = Symbol('EMAIL_GATEWAY');
@@ -3337,7 +3337,7 @@ export interface EmailGateway {
 }
 ```
 
-- [ ] Create `services/notification/src/gateways/sendgrid-email.gateway.ts`:
+- [x] Create `services/notification/src/gateways/sendgrid-email.gateway.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -3381,7 +3381,7 @@ export class SendGridEmailGateway implements EmailGateway {
 
 ### Step 10.3 — Notification service
 
-- [ ] Replace `services/notification/src/notification/notification.service.ts`:
+- [x] Replace `services/notification/src/notification/notification.service.ts`:
 
 ```typescript
 import { Inject, Injectable } from '@nestjs/common';
@@ -3406,7 +3406,7 @@ export class NotificationService {
 
 ### Step 10.4 — Kafka handler (thin)
 
-- [ ] Replace `services/notification/src/invoice-events/invoice-events.controller.ts` → rename to `invoice-events.handler.ts`:
+- [x] Replace `services/notification/src/invoice-events/invoice-events.controller.ts` → rename to `invoice-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
