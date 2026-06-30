@@ -47,7 +47,7 @@ export class StripeService {
 		})
 
 		if (!response.ok) {
-			this.logger.error(`Webhook failed: HTTP ${response.status}`)
+			this.logger.error(`Stripe webhook failed: HTTP ${response.status}`)
 		}
 	}
 }

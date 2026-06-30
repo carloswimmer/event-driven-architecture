@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common'
 import { MailService } from './mail.service'
+import { SendMailRequestDto } from './mail.types'
 
 @Controller('v3/mail')
 export class MailController {
@@ -7,12 +8,7 @@ export class MailController {
 
 	@Post('send')
 	@HttpCode(202)
-	send(
-		@Body() body: {
-			personalizations: Array<{ to: Array<{ email: string }> }>
-			subject: string
-		},
-	) {
-		return this.mailService.send(body)
+	send(@Body() body: SendMailRequestDto) {
+		return this.mailService.sendMail(body)
 	}
 }
