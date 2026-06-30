@@ -3441,7 +3441,7 @@ export class InvoiceEventsHandler {
 
 ### Step 10.5 — Wire modules and hybrid main
 
-- [ ] Replace `services/notification/src/notification/notification.module.ts`:
+- [x] Replace `services/notification/src/notification/notification.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3465,7 +3465,7 @@ import { NotificationService } from './notification.service';
 export class NotificationModule {}
 ```
 
-- [ ] Create `services/notification/src/app.module.ts`:
+- [x] Create `services/notification/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3479,7 +3479,7 @@ import { NotificationModule } from './notification/notification.module';
 export class AppModule {}
 ```
 
-- [ ] Create `services/notification/src/main.ts`:
+- [x] Create `services/notification/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
@@ -3527,7 +3527,7 @@ bootstrap().catch((err) => {
 
 ### Step 10.6 — Build all microservices
 
-- [ ] Build each standalone service from its own folder:
+- [x] Build each standalone service from its own folder:
 
 ```bash
 for svc in api-gateway payment availability analytics invoice notification; do
