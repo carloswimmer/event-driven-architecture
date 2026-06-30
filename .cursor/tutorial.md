@@ -66,6 +66,10 @@ flowchart LR
   Kafka --> AnalyticsService
   Kafka --> NotificationService
   NotificationService --> SendGridMock
+  SendGridMock -->|Event_Webhook| NotificationService
+  NotificationService -->|notifications.email.delivered| RabbitMQ
+  NotificationService -->|notifications.email.failed| RabbitMQ
+  RabbitMQ --> AnalyticsService
 ```
 
 ### GCP diagram → local stack
@@ -75,7 +79,7 @@ flowchart LR
 | Cloud Task | **RabbitMQ** | Point-to-point: one worker per message |
 | Pub/Sub | **Kafka** | Fan-out: many consumers per topic |
 | Stripe | `mocks/stripe-mock` | HTTP + webhook callback |
-| SendGrid | `mocks/sendgrid-mock` | HTTP email API |
+| SendGrid | `mocks/sendgrid-mock` | HTTP Mail Send + Event Webhook callback |
 
 ### Event payloads
 
@@ -84,7 +88,9 @@ flowchart LR
 | `orders.payment.requested` | RabbitMQ routing key | `{ reserveId, orderNumber, amount, customerEmail }` |
 | `orders.payment.succeeded` | Kafka topic | `{ reserveId, value, customerInfo, orderNumber }` |
 | `orders.payment.failed` | Kafka topic | `{ orderNumber, reason }` |
-| `billing.invoice.created` | Kafka topic | `{ value, customerInfo, orderNumber, invoiceId }` |
+| `billing.invoice.created` | Kafka topic | `{ amount, customerInfo, orderNumber, invoiceId }` |
+| `notifications.email.delivered` | RabbitMQ routing key | `{ invoiceId, orderNumber, email, sgMessageId }` |
+| `notifications.email.failed` | RabbitMQ routing key | `{ invoiceId, orderNumber, email, reason }` |
 
 ### Naming convention (namespaced)
 
@@ -92,7 +98,7 @@ Commands and events use a **`<domain>.<entity>.<action>`** pattern so multiple t
 
 | Kind | Pattern | Examples |
 |------|---------|----------|
-| Command (RabbitMQ) | `<domain>.<entity>.<verb>` | `orders.payment.requested` |
+| Command (RabbitMQ) | `<domain>.<entity>.<verb>` | `orders.payment.requested`, `notifications.email.delivered`, `notifications.email.failed` |
 | Event (Kafka) | `<domain>.<entity>.<past-tense>` | `orders.payment.succeeded`, `orders.payment.failed`, `billing.invoice.created` |
 | Dead letter | `<command>.dlq` / `<command>.failed` | `orders.payment.requested.dlq` |
 
@@ -173,11 +179,15 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
 - [x] Open RabbitMQ Management UI: http://localhost:15672
 - [x] Login: `admin` / `change-me-admin-password` (or your `.env` values)
-- [x] Confirm:
+- [ ] Confirm:
   - Vhost **`eda`** exists
   - Exchange **`eda.commands`** (direct, durable)
   - Queue **`orders.payment.requested`** (quorum, with DLX → `eda.dlx`)
   - Queue **`orders.payment.requested.dlq`**
+  - Queue **`notifications.email.delivered`** (quorum, with DLX → `eda.dlx`)
+  - Queue **`notifications.email.delivered.dlq`**
+  - Queue **`notifications.email.failed`** (quorum, with DLX → `eda.dlx`)
+  - Queue **`notifications.email.failed.dlq`**
   - Application user **`eda_app`** exists with permissions on vhost `eda`
 
 Topology is defined in `infra/rabbitmq/definitions.json` and imported by `infra/rabbitmq/init.sh`.
@@ -336,6 +346,13 @@ export const EXCHANGES = {
 } as const;
 ```
 
+- [ ] Append to `packages/contracts/src/routing-keys.ts` → `ROUTING_KEYS`:
+
+```typescript
+EMAIL_DELIVERED: 'notifications.email.delivered',
+EMAIL_FAILED: 'notifications.email.failed',
+```
+
 - [x] Create `packages/contracts/src/topics.ts`:
 
 ```typescript
@@ -395,7 +412,67 @@ export const InvoiceCreatedSchema = z.object({
 export type InvoiceCreated = z.infer<typeof InvoiceCreatedSchema>;
 ```
 
-- [x] Create `packages/contracts/src/index.ts`:
+- [ ] Create `packages/contracts/src/events/sendgrid-webhook.ts`:
+
+```typescript
+import { z } from 'zod';
+
+export const SendGridWebhookEventSchema = z.object({
+  event: z.enum([
+    'processed',
+    'delivered',
+    'bounce',
+    'dropped',
+    'deferred',
+    'open',
+    'click',
+  ]),
+  email: z.string().email(),
+  timestamp: z.number(),
+  sg_message_id: z.string(),
+  invoiceId: z.string().uuid().optional(),
+  orderNumber: z.string().uuid().optional(),
+  reason: z.string().optional(),
+  response: z.string().optional(),
+  type: z.string().optional(),
+});
+
+export const SendGridWebhookPayloadSchema = z.array(SendGridWebhookEventSchema);
+
+export type SendGridWebhookEvent = z.infer<typeof SendGridWebhookEventSchema>;
+```
+
+- [ ] Create `packages/contracts/src/events/email-delivered.ts`:
+
+```typescript
+import { z } from 'zod';
+
+export const EmailDeliveredSchema = z.object({
+  invoiceId: z.string().uuid(),
+  orderNumber: z.string().uuid(),
+  email: z.string().email(),
+  sgMessageId: z.string(),
+});
+
+export type EmailDelivered = z.infer<typeof EmailDeliveredSchema>;
+```
+
+- [ ] Create `packages/contracts/src/events/email-failed.ts`:
+
+```typescript
+import { z } from 'zod';
+
+export const EmailFailedSchema = z.object({
+  invoiceId: z.string().uuid(),
+  orderNumber: z.string().uuid(),
+  email: z.string().email(),
+  reason: z.string(),
+});
+
+export type EmailFailed = z.infer<typeof EmailFailedSchema>;
+```
+
+- [ ] Update `packages/contracts/src/index.ts`:
 
 ```typescript
 export * from './routing-keys';
@@ -403,6 +480,97 @@ export * from './topics';
 export * from './events/payment-requested';
 export * from './events/payment-succeeded';
 export * from './events/invoice-created';
+export * from './events/sendgrid-webhook';
+export * from './events/email-delivered';
+export * from './events/email-failed';
+```
+
+- [ ] Append to `infra/rabbitmq/definitions.json` → `queues`:
+
+```json
+{
+  "name": "notifications.email.delivered",
+  "vhost": "eda",
+  "durable": true,
+  "auto_delete": false,
+  "arguments": {
+    "x-queue-type": "quorum",
+    "x-dead-letter-exchange": "eda.dlx",
+    "x-dead-letter-routing-key": "notifications.email.delivered.failed"
+  }
+},
+{
+  "name": "notifications.email.delivered.dlq",
+  "vhost": "eda",
+  "durable": true,
+  "auto_delete": false,
+  "arguments": {
+    "x-queue-type": "quorum"
+  }
+},
+{
+  "name": "notifications.email.failed",
+  "vhost": "eda",
+  "durable": true,
+  "auto_delete": false,
+  "arguments": {
+    "x-queue-type": "quorum",
+    "x-dead-letter-exchange": "eda.dlx",
+    "x-dead-letter-routing-key": "notifications.email.failed.failed"
+  }
+},
+{
+  "name": "notifications.email.failed.dlq",
+  "vhost": "eda",
+  "durable": true,
+  "auto_delete": false,
+  "arguments": {
+    "x-queue-type": "quorum"
+  }
+}
+```
+
+- [ ] Append to `infra/rabbitmq/definitions.json` → `bindings`:
+
+```json
+{
+  "source": "eda.commands",
+  "vhost": "eda",
+  "destination": "notifications.email.delivered",
+  "destination_type": "queue",
+  "routing_key": "notifications.email.delivered",
+  "arguments": {}
+},
+{
+  "source": "eda.dlx",
+  "vhost": "eda",
+  "destination": "notifications.email.delivered.dlq",
+  "destination_type": "queue",
+  "routing_key": "notifications.email.delivered.failed",
+  "arguments": {}
+},
+{
+  "source": "eda.commands",
+  "vhost": "eda",
+  "destination": "notifications.email.failed",
+  "destination_type": "queue",
+  "routing_key": "notifications.email.failed",
+  "arguments": {}
+},
+{
+  "source": "eda.dlx",
+  "vhost": "eda",
+  "destination": "notifications.email.failed.dlq",
+  "destination_type": "queue",
+  "routing_key": "notifications.email.failed.failed",
+  "arguments": {}
+}
+```
+
+- [ ] Recreate RabbitMQ topology:
+
+```bash
+docker compose up -d rabbitmq-init
 ```
 
 ### Step 1.4 — Install and build
@@ -982,7 +1150,7 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 ## Phase 4 — Mock SendGrid service
 
-**Goal:** Simulate SendGrid email delivery API.
+**Goal:** Simulate SendGrid Mail Send API (202 Accepted) and async Event Webhook delivery.
 
 **Port:** `3002` | **Package:** `@eda/sendgrid-mock` | **Nest project:** `sendgrid-mock`
 
@@ -1040,11 +1208,31 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 ### Step 4.2 — SendGrid mock implementation
 
-- [x] Create `mocks/sendgrid-mock/src/mail.controller.ts`:
+- [ ] Create `mocks/sendgrid-mock/.env`:
+
+```bash
+PORT=3002
+NOTIFICATION_WEBHOOK_URL=http://localhost:3050/webhooks/sendgrid
+```
+
+- [ ] Create `mocks/sendgrid-mock/src/mail.types.ts`:
+
+```typescript
+export interface SendMailRequestDto {
+  personalizations: Array<{
+    to: Array<{ email: string }>;
+    custom_args?: Record<string, string>;
+  }>;
+  subject: string;
+}
+```
+
+- [ ] Replace `mocks/sendgrid-mock/src/mail.controller.ts`:
 
 ```typescript
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
 import { MailService } from './mail.service';
+import { SendMailRequestDto } from './mail.types';
 
 @Controller('v3/mail')
 export class MailController {
@@ -1052,28 +1240,83 @@ export class MailController {
 
   @Post('send')
   @HttpCode(202)
-  send(@Body() body: { personalizations: Array<{ to: Array<{ email: string }> }>; subject: string }) {
-    return this.mailService.send(body);
+  send(@Body() body: SendMailRequestDto) {
+    return this.mailService.sendMail(body);
   }
 }
 ```
 
-- [x] Create `mocks/sendgrid-mock/src/mail.service.ts`:
+- [ ] Replace `mocks/sendgrid-mock/src/mail.service.ts`:
 
 ```typescript
+import { randomUUID } from 'node:crypto';
+import { requireEnv } from '@eda/shared';
 import { Injectable, Logger } from '@nestjs/common';
+import { SendMailRequestDto } from './mail.types';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
+  private readonly webhookUrl = requireEnv('NOTIFICATION_WEBHOOK_URL');
 
-  send(body: {
-    personalizations: Array<{ to: Array<{ email: string }> }>;
-    subject: string;
-  }) {
-    const recipient = body.personalizations?.[0]?.to?.[0]?.email ?? 'unknown';
-    this.logger.log(`Email sent to ${recipient}: ${body.subject}`);
+  sendMail(body: SendMailRequestDto): { message: string } {
+    const personalization = body.personalizations?.[0];
+    const email = personalization?.to?.[0]?.email ?? 'unknown';
+    const customArgs = personalization?.custom_args ?? {};
+    const sgMessageId = `sg_mock_${randomUUID()}`;
+
+    this.logger.log(`Accepted email to ${email}: ${body.subject}`);
+
+    setTimeout(() => {
+      void this.emitEvents(email, sgMessageId, customArgs);
+    }, 2000);
+
     return { message: 'accepted' };
+  }
+
+  private async emitEvents(
+    email: string,
+    sgMessageId: string,
+    customArgs: Record<string, string>,
+  ): Promise<void> {
+    const shouldBounce = email.includes('bounce@');
+
+    const base = {
+      email,
+      timestamp: Math.floor(Date.now() / 1000),
+      sg_message_id: sgMessageId,
+      ...customArgs,
+    };
+
+    await this.postWebhook([{ ...base, event: 'processed' }]);
+
+    if (shouldBounce) {
+      await this.postWebhook([
+        {
+          ...base,
+          event: 'bounce',
+          reason: '500 unknown recipient',
+          type: 'bounce',
+        },
+      ]);
+      return;
+    }
+
+    await this.postWebhook([
+      { ...base, event: 'delivered', response: '250 OK' },
+    ]);
+  }
+
+  private async postWebhook(events: unknown[]): Promise<void> {
+    const response = await fetch(this.webhookUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(events),
+    });
+
+    if (!response.ok) {
+      this.logger.error(`SendGrid webhook failed: HTTP ${response.status}`);
+    }
   }
 }
 ```
@@ -1121,7 +1364,7 @@ bootstrap().catch((err) => {
 
 ### Step 4.3 — Build
 
-- [x] Run:
+- [ ] Run:
 
 ```bash
 pnpm --filter @eda/sendgrid-mock build
@@ -1133,12 +1376,14 @@ pnpm --filter @eda/sendgrid-mock build
 
 - `@eda/sendgrid-mock` builds.
 - Service accepts `POST /v3/mail/send` and returns HTTP 202.
+- After ~2s, mock posts Event Webhook array to `NOTIFICATION_WEBHOOK_URL`.
+- Email containing `bounce@` triggers `bounce` instead of `delivered`.
 
 ### Suggested commit
 
 ```bash
-git add nest-cli.json mocks/sendgrid-mock
-git commit -m "feat: add mock SendGrid email service"
+git add nest-cli.json mocks/sendgrid-mock infra/rabbitmq/definitions.json packages/contracts
+git commit -m "feat: add SendGrid mock with Event Webhook simulation"
 ```
 
 ---
@@ -2693,7 +2938,7 @@ git commit -m "feat: add availability service with inventory repository"
 
 ## Phase 8 — Analytics Service
 
-**Goal:** Project Kafka events into an in-memory store; expose via HTTP for debugging. Hybrid app with two Kafka handlers.
+**Goal:** Project Kafka events and email commands into an in-memory store; expose via HTTP for debugging. Hybrid app with Kafka + RabbitMQ consumers.
 
 **Port:** `3030` | **Folder:** `services/analytics/`
 
@@ -2704,8 +2949,10 @@ services/analytics/src/
 │   in-memory-events.repository.ts
 │   events.service.ts
 │   events.controller.ts
-└── kafka-events/
-    kafka-events.handler.ts
+├── kafka-events/
+│   kafka-events.handler.ts
+└── rabbitmq-events/
+    rabbitmq-events.handler.ts
 ```
 
 ### Step 8.1 — Scaffold standalone project
@@ -2731,16 +2978,17 @@ cp ../api-gateway/biome.json ./biome.json
 ```bash
 PORT=3030
 KAFKA_BROKERS=localhost:9094
+RABBITMQ_URL=amqp://eda_app:change-me-app-password@localhost:5672/eda
 ```
 
-- [x] Scaffold modules (from **`services/analytics/`**):
+- [ ] Scaffold modules (from **`services/analytics/`**):
 
 ```bash
 npx nest g module analytics --no-spec
 npx nest g controller events --no-spec
 npx nest g controller kafka-events --no-spec
 npx nest g service events --no-spec
-mkdir -p src/events src/kafka-events
+mkdir -p src/events src/kafka-events src/rabbitmq-events
 ```
 
 ### Step 8.2 — Events repository + service + HTTP controller
@@ -2858,9 +3106,47 @@ export class KafkaEventsHandler {
 }
 ```
 
-### Step 8.4 — Wire modules and hybrid main
+### Step 8.4 — RabbitMQ handlers (thin)
 
-- [x] Replace `services/analytics/src/analytics.module.ts`:
+- [ ] Create `services/analytics/src/rabbitmq-events/rabbitmq-events.handler.ts`:
+
+```typescript
+import { Controller, Logger } from '@nestjs/common';
+import { EventPattern, Payload } from '@nestjs/microservices';
+import {
+  EmailDeliveredSchema,
+  EmailFailedSchema,
+  ROUTING_KEYS,
+} from '@eda/contracts';
+import { EventsService } from '../events/events.service';
+
+@Controller()
+export class RabbitMqEventsHandler {
+  private readonly logger = new Logger(RabbitMqEventsHandler.name);
+
+  constructor(private readonly eventsService: EventsService) {}
+
+  @EventPattern(ROUTING_KEYS.EMAIL_DELIVERED)
+  handleEmailDelivered(@Payload() payload: unknown) {
+    const event = EmailDeliveredSchema.parse(payload);
+    this.logger.log(
+      `Recorded notifications.email.delivered: ${event.invoiceId}`,
+    );
+    this.eventsService.record('notifications.email.delivered', event);
+  }
+
+  @EventPattern(ROUTING_KEYS.EMAIL_FAILED)
+  handleEmailFailed(@Payload() payload: unknown) {
+    const event = EmailFailedSchema.parse(payload);
+    this.logger.log(`Recorded notifications.email.failed: ${event.invoiceId}`);
+    this.eventsService.record('notifications.email.failed', event);
+  }
+}
+```
+
+### Step 8.5 — Wire modules and hybrid main
+
+- [ ] Replace `services/analytics/src/analytics.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -2869,9 +3155,10 @@ import { InMemoryEventsRepository } from './events/in-memory-events.repository';
 import { EVENTS_REPOSITORY } from './events/events.repository';
 import { EventsService } from './events/events.service';
 import { KafkaEventsHandler } from './kafka-events/kafka-events.handler';
+import { RabbitMqEventsHandler } from './rabbitmq-events/rabbitmq-events.handler';
 
 @Module({
-  controllers: [EventsController, KafkaEventsHandler],
+  controllers: [EventsController, KafkaEventsHandler, RabbitMqEventsHandler],
   providers: [
     EventsService,
     {
@@ -2897,10 +3184,11 @@ import { AnalyticsModule } from './analytics.module';
 export class AppModule {}
 ```
 
-- [x] Create `services/analytics/src/main.ts`:
+- [ ] Replace `services/analytics/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
+import { EXCHANGES } from '@eda/contracts';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -2931,6 +3219,36 @@ async function bootstrap() {
     },
   });
 
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [requireEnv('RABBITMQ_URL')],
+      queue: 'notifications.email.delivered',
+      noAssert: true,
+      noAck: false,
+      prefetchCount: 1,
+      queueOptions: { durable: true },
+      wildcards: true,
+      exchange: EXCHANGES.COMMANDS,
+      exchangeType: 'topic',
+    },
+  });
+
+  app.connectMicroservice<MicroserviceOptions>({
+    transport: Transport.RMQ,
+    options: {
+      urls: [requireEnv('RABBITMQ_URL')],
+      queue: 'notifications.email.failed',
+      noAssert: true,
+      noAck: false,
+      prefetchCount: 1,
+      queueOptions: { durable: true },
+      wildcards: true,
+      exchange: EXCHANGES.COMMANDS,
+      exchangeType: 'topic',
+    },
+  });
+
   await app.startAllMicroservices();
   const port = Number(process.env.PORT ?? 3030);
   await app.listen(port, '0.0.0.0');
@@ -2943,7 +3261,7 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 8.5 — Build
+### Step 8.6 — Build
 
 - [ ] From **`services/analytics/`**:
 
@@ -2957,12 +3275,13 @@ pnpm build
 
 - Analytics service builds from its own folder.
 - Kafka handlers delegate to `EventsService` → `EventsRepository`.
+- RabbitMQ handlers record `notifications.email.delivered` and `notifications.email.failed`.
 
 ### Suggested commit
 
 ```bash
 git add services/analytics
-git commit -m "feat: add analytics service with events repository"
+git commit -m "feat: add analytics RabbitMQ handlers for email commands"
 ```
 
 ---
@@ -3270,7 +3589,7 @@ git commit -m "feat: add invoice service with event publisher port"
 
 ## Phase 10 — Notification Service
 
-**Goal:** Consume `billing.invoice.created`, send email via SendGrid gateway. Hybrid app (HTTP health + Kafka consumer).
+**Goal:** Consume `billing.invoice.created`, send email via SendGrid gateway, receive Event Webhook, emit RabbitMQ commands to Analytics.
 
 **Port:** `3050` | **Folder:** `services/notification/`
 
@@ -3281,9 +3600,14 @@ services/notification/src/
 │   notification.module.ts
 ├── invoice-events/
 │   invoice-events.handler.ts
-└── gateways/
-    email.gateway.ts
-    sendgrid-email.gateway.ts
+├── webhooks/
+│   webhooks.controller.ts
+├── gateways/
+│   email.gateway.ts
+│   sendgrid-email.gateway.ts
+└── messaging/
+    analytics-command.publisher.ts
+    rabbitmq-analytics-command.publisher.ts
 ```
 
 ### Step 10.1 — Scaffold standalone project
@@ -3309,6 +3633,7 @@ cp ../api-gateway/biome.json ./biome.json
 ```bash
 PORT=3050
 KAFKA_BROKERS=localhost:9094
+RABBITMQ_URL=amqp://eda_app:change-me-app-password@localhost:5672/eda
 SENDGRID_MOCK_URL=http://localhost:3002
 ```
 
@@ -3318,7 +3643,8 @@ SENDGRID_MOCK_URL=http://localhost:3002
 npx nest g module notification --no-spec
 npx nest g service notification --no-spec
 npx nest g controller invoice-events --no-spec
-mkdir -p src/gateways src/invoice-events
+npx nest g controller webhooks --no-spec
+mkdir -p src/gateways src/invoice-events src/webhooks src/messaging
 ```
 
 ### Step 10.2 — Email gateway
@@ -3337,7 +3663,7 @@ export interface EmailGateway {
 }
 ```
 
-- [x] Create `services/notification/src/gateways/sendgrid-email.gateway.ts`:
+- [ ] Replace `services/notification/src/gateways/sendgrid-email.gateway.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -3358,7 +3684,12 @@ export class SendGridEmailGateway implements EmailGateway {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email }] }],
+        personalizations: [
+          {
+            to: [{ email }],
+            custom_args: { invoiceId, orderNumber },
+          },
+        ],
         from: { email: 'noreply@eda.local' },
         subject: `Invoice ${invoiceId} for order ${orderNumber}`,
         content: [
@@ -3374,24 +3705,92 @@ export class SendGridEmailGateway implements EmailGateway {
       throw new Error(`SendGrid mock returned HTTP ${response.status}`);
     }
 
-    this.logger.log(`Invoice email sent to ${email}`);
+    this.logger.log(`Invoice email accepted by SendGrid for ${email}`);
   }
 }
 ```
 
-### Step 10.3 — Notification service
+### Step 10.3 — Analytics command publisher port
 
-- [x] Replace `services/notification/src/notification/notification.service.ts`:
+- [ ] Create `services/notification/src/messaging/analytics-command.publisher.ts`:
 
 ```typescript
+import { EmailDelivered, EmailFailed } from '@eda/contracts';
+
+export const ANALYTICS_COMMAND_PUBLISHER = Symbol('ANALYTICS_COMMAND_PUBLISHER');
+
+export interface AnalyticsCommandPublisher {
+  publishEmailDelivered(payload: EmailDelivered): Promise<void>;
+  publishEmailFailed(payload: EmailFailed): Promise<void>;
+}
+```
+
+- [ ] Create `services/notification/src/messaging/rabbitmq-analytics-command.publisher.ts`:
+
+```typescript
+import {
+  EmailDelivered,
+  EmailDeliveredSchema,
+  EmailFailed,
+  EmailFailedSchema,
+  ROUTING_KEYS,
+} from '@eda/contracts';
 import { Inject, Injectable } from '@nestjs/common';
-import { InvoiceCreated } from '@eda/contracts';
+import { ClientProxy } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
+import { AnalyticsCommandPublisher } from './analytics-command.publisher';
+
+@Injectable()
+export class RabbitMqAnalyticsCommandPublisher
+  implements AnalyticsCommandPublisher
+{
+  constructor(
+    @Inject('RABBITMQ_COMMANDS') private readonly client: ClientProxy,
+  ) {}
+
+  async publishEmailDelivered(payload: EmailDelivered): Promise<void> {
+    const command = EmailDeliveredSchema.parse(payload);
+    await firstValueFrom(
+      this.client.emit(ROUTING_KEYS.EMAIL_DELIVERED, command),
+    );
+  }
+
+  async publishEmailFailed(payload: EmailFailed): Promise<void> {
+    const command = EmailFailedSchema.parse(payload);
+    await firstValueFrom(
+      this.client.emit(ROUTING_KEYS.EMAIL_FAILED, command),
+    );
+  }
+}
+```
+
+### Step 10.4 — Notification service
+
+- [ ] Replace `services/notification/src/notification/notification.service.ts`:
+
+```typescript
+import {
+  EmailDeliveredSchema,
+  EmailFailedSchema,
+  InvoiceCreated,
+  SendGridWebhookEvent,
+  SendGridWebhookEventSchema,
+} from '@eda/contracts';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  ANALYTICS_COMMAND_PUBLISHER,
+  AnalyticsCommandPublisher,
+} from '../messaging/analytics-command.publisher';
 import { EMAIL_GATEWAY, EmailGateway } from '../gateways/email.gateway';
 
 @Injectable()
 export class NotificationService {
+  private readonly logger = new Logger(NotificationService.name);
+
   constructor(
     @Inject(EMAIL_GATEWAY) private readonly emailGateway: EmailGateway,
+    @Inject(ANALYTICS_COMMAND_PUBLISHER)
+    private readonly analyticsCommands: AnalyticsCommandPublisher,
   ) {}
 
   async sendInvoiceNotification(event: InvoiceCreated): Promise<void> {
@@ -3401,10 +3800,71 @@ export class NotificationService {
       event.orderNumber,
     );
   }
+
+  async handleSendGridEvent(raw: SendGridWebhookEvent): Promise<void> {
+    const event = SendGridWebhookEventSchema.parse(raw);
+
+    if (event.event === 'processed') {
+      this.logger.log(`SendGrid processed: ${event.email}`);
+      return;
+    }
+
+    if (!event.invoiceId || !event.orderNumber) {
+      throw new Error('SendGrid webhook missing invoiceId or orderNumber');
+    }
+
+    if (event.event === 'delivered') {
+      await this.analyticsCommands.publishEmailDelivered(
+        EmailDeliveredSchema.parse({
+          invoiceId: event.invoiceId,
+          orderNumber: event.orderNumber,
+          email: event.email,
+          sgMessageId: event.sg_message_id,
+        }),
+      );
+      return;
+    }
+
+    if (event.event === 'bounce' || event.event === 'dropped') {
+      await this.analyticsCommands.publishEmailFailed(
+        EmailFailedSchema.parse({
+          invoiceId: event.invoiceId,
+          orderNumber: event.orderNumber,
+          email: event.email,
+          reason: event.reason ?? event.event,
+        }),
+      );
+    }
+  }
 }
 ```
 
-### Step 10.4 — Kafka handler (thin)
+### Step 10.5 — SendGrid webhook controller (thin)
+
+- [ ] Replace `services/notification/src/webhooks/webhooks.controller.ts`:
+
+```typescript
+import { SendGridWebhookPayloadSchema } from '@eda/contracts';
+import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { NotificationService } from '../notification/notification.service';
+
+@Controller('webhooks')
+export class WebhooksController {
+  constructor(private readonly notificationService: NotificationService) {}
+
+  @Post('sendgrid')
+  @HttpCode(204)
+  async sendgrid(@Body() body: unknown) {
+    const events = SendGridWebhookPayloadSchema.parse(body);
+
+    for (const event of events) {
+      await this.notificationService.handleSendGridEvent(event);
+    }
+  }
+}
+```
+
+### Step 10.6 — Kafka handler (thin)
 
 - [x] Replace `services/notification/src/invoice-events/invoice-events.controller.ts` → rename to `invoice-events.handler.ts`:
 
@@ -3439,20 +3899,43 @@ export class InvoiceEventsHandler {
 }
 ```
 
-### Step 10.5 — Wire modules and hybrid main
+### Step 10.7 — Wire modules and hybrid main
 
-- [x] Replace `services/notification/src/notification/notification.module.ts`:
+- [ ] Replace `services/notification/src/notification/notification.module.ts`:
 
 ```typescript
+import { EXCHANGES } from '@eda/contracts';
 import { Module } from '@nestjs/common';
+import { ClientsModule, Transport } from '@nestjs/microservices';
+import { requireEnv } from '../common/env';
 import { IdempotencyStore } from '../common/idempotency.store';
 import { SendGridEmailGateway } from '../gateways/sendgrid-email.gateway';
 import { EMAIL_GATEWAY } from '../gateways/email.gateway';
 import { InvoiceEventsHandler } from '../invoice-events/invoice-events.handler';
+import { ANALYTICS_COMMAND_PUBLISHER } from '../messaging/analytics-command.publisher';
+import { RabbitMqAnalyticsCommandPublisher } from '../messaging/rabbitmq-analytics-command.publisher';
+import { WebhooksController } from '../webhooks/webhooks.controller';
 import { NotificationService } from './notification.service';
 
+const rabbitmqRegister = ClientsModule.register([
+  {
+    name: 'RABBITMQ_COMMANDS',
+    transport: Transport.RMQ,
+    options: {
+      urls: [requireEnv('RABBITMQ_URL')],
+      queue: 'notifications.email.delivered',
+      noAssert: true,
+      queueOptions: { durable: true },
+      wildcards: true,
+      exchange: EXCHANGES.COMMANDS,
+      exchangeTypes: 'topic',
+    },
+  },
+]);
+
 @Module({
-  controllers: [InvoiceEventsHandler],
+  imports: [rabbitmqRegister],
+  controllers: [InvoiceEventsHandler, WebhooksController],
   providers: [
     IdempotencyStore,
     NotificationService,
@@ -3460,12 +3943,16 @@ import { NotificationService } from './notification.service';
       provide: EMAIL_GATEWAY,
       useClass: SendGridEmailGateway,
     },
+    {
+      provide: ANALYTICS_COMMAND_PUBLISHER,
+      useClass: RabbitMqAnalyticsCommandPublisher,
+    },
   ],
 })
 export class NotificationModule {}
 ```
 
-- [x] Create `services/notification/src/app.module.ts`:
+- [ ] Replace `services/notification/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3525,9 +4012,9 @@ bootstrap().catch((err) => {
 });
 ```
 
-### Step 10.6 — Build all microservices
+### Step 10.8 — Build all microservices
 
-- [x] Build each standalone service from its own folder:
+- [ ] Build each standalone service from its own folder:
 
 ```bash
 for svc in api-gateway payment availability analytics invoice notification; do
@@ -3541,12 +4028,13 @@ done
 
 - All 6 microservices build with `pnpm build` from their own folders.
 - Mocks (Phases 3–4) still build via root `npx nest build <mock>`.
+- SendGrid mock posts Event Webhook; notification emits RabbitMQ commands; analytics records email events.
 
 ### Suggested commit
 
 ```bash
 git add services/notification
-git commit -m "feat: add notification service with email gateway port"
+git commit -m "feat: add SendGrid webhook handler and analytics command publisher"
 ```
 
 ---
@@ -3648,6 +4136,7 @@ API_GATEWAY_PORT=3000
 STRIPE_MOCK_URL=http://stripe-mock:3001
 SENDGRID_MOCK_URL=http://sendgrid-mock:3002
 PAYMENT_WEBHOOK_URL=http://payment:3010/webhooks/stripe
+NOTIFICATION_WEBHOOK_URL=http://notification:3050/webhooks/sendgrid
 
 # Messaging URLs (Docker network — used inside containers)
 KAFKA_BROKERS=kafka:9092
@@ -3685,6 +4174,7 @@ cp .env.example .env
     restart: unless-stopped
     environment:
       PORT: 3002
+      NOTIFICATION_WEBHOOK_URL: ${NOTIFICATION_WEBHOOK_URL:-http://notification:3050/webhooks/sendgrid}
     networks:
       - eda-network
 
@@ -3751,11 +4241,14 @@ cp .env.example .env
     container_name: eda-analytics
     restart: unless-stopped
     depends_on:
+      rabbitmq-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
     environment:
       PORT: 3030
       KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://eda_app:change-me-app-password@rabbitmq:5672/eda}
     networks:
       - eda-network
 
@@ -3781,6 +4274,8 @@ cp .env.example .env
     container_name: eda-notification
     restart: unless-stopped
     depends_on:
+      rabbitmq-init:
+        condition: service_completed_successfully
       kafka-init:
         condition: service_completed_successfully
       sendgrid-mock:
@@ -3788,6 +4283,7 @@ cp .env.example .env
     environment:
       PORT: 3050
       KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://eda_app:change-me-app-password@rabbitmq:5672/eda}
       SENDGRID_MOCK_URL: ${SENDGRID_MOCK_URL:-http://sendgrid-mock:3002}
     networks:
       - eda-network
@@ -3912,7 +4408,7 @@ curl -s http://localhost:3000/orders/<orderNumber>
 
 **Expected:** `"status":"payment_succeeded"`
 
-### Step 12.5 — Verify analytics recorded both events
+### Step 12.5 — Verify analytics recorded all events
 
 - [ ] Run:
 
@@ -3920,13 +4416,28 @@ curl -s http://localhost:3000/orders/<orderNumber>
 curl -s http://localhost:3030/events | python3 -m json.tool
 ```
 
-**Expected:** Array with at least two entries:
+**Expected:** Array with at least four entries:
 - `{ "type": "orders.payment.succeeded", ... }`
 - `{ "type": "billing.invoice.created", ... }`
+- `{ "type": "notifications.email.delivered", ... }`
+
+### Step 12.5b — Verify email bounce path (optional)
+
+- [ ] Create order with customer email containing `bounce@` (e.g. `bounce@test.local`).
+
+- [ ] Wait for full flow (~25s for Stripe webhook + ~2s for SendGrid webhook).
+
+- [ ] Run:
+
+```bash
+curl -s http://localhost:3030/events | python3 -m json.tool
+```
+
+**Expected:** Entry `{ "type": "notifications.email.failed", ... }` with `reason` field.
 
 ### Step 12.6 — Verify broker state
 
-- [ ] **RabbitMQ UI** (http://localhost:15672): queue `orders.payment.requested` should have processed messages (Ready ≈ 0 after consumption).
+- [ ] **RabbitMQ UI** (http://localhost:15672): queues `orders.payment.requested`, `notifications.email.delivered`, and `notifications.email.failed` should have processed messages (Ready ≈ 0 after consumption).
 - [ ] **Kafka UI** (http://localhost:8080): topics `orders.payment.succeeded` and `billing.invoice.created` show new messages.
 - [ ] **Container logs:**
 
@@ -3937,7 +4448,7 @@ docker logs eda-notification --tail 20
 docker logs eda-sendgrid-mock --tail 20
 ```
 
-**Expected:** Payment processed, invoice created, email sent log in sendgrid-mock.
+**Expected:** Payment processed, invoice created, SendGrid accepted email, Event Webhook delivered, analytics recorded email command.
 
 ### Troubleshooting
 
@@ -3949,11 +4460,13 @@ docker logs eda-sendgrid-mock --tail 20
 | Message in DLQ | Payment service threw error | Check `docker logs eda-payment`; fix and requeue manually in RabbitMQ UI |
 | `Unknown topic` error | Kafka init failed | Run `docker logs eda-kafka-init`; recreate with `docker compose ... up -d` |
 | Webhook not received | stripe-mock cannot reach payment | Verify `PAYMENT_WEBHOOK_URL=http://payment:3010/webhooks/stripe` on same Docker network |
+| SendGrid webhook not received | sendgrid-mock cannot reach notification | Verify `NOTIFICATION_WEBHOOK_URL=http://notification:3050/webhooks/sendgrid` on same Docker network |
+| Email event missing in analytics | RabbitMQ command not consumed | Check `docker logs eda-notification` and `docker logs eda-analytics`; verify email queues in RabbitMQ UI |
 | Duplicate processing | Idempotency working correctly | Expected on redelivery; check logs for `Duplicate` warnings |
 
 ### Checkpoint
 
-- Full flow works: HTTP → RabbitMQ → Payment → Kafka → Invoice → Notification → SSE (`payment_succeeded` or `payment_failed`).
+- Full flow works: HTTP → RabbitMQ → Payment → Kafka → Invoice → Notification → SendGrid → Webhook → RabbitMQ → Analytics.
 
 ### Suggested commit
 
