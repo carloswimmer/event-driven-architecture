@@ -10,7 +10,7 @@ import { PAYMENT_GATEWAY } from 'src/gateways/payment.gateway'
 import { StripePaymentGateway } from 'src/gateways/stripe-payment.gateway'
 import { DOMAIN_EVENT_PUBLISHER } from 'src/messaging/domain-event.publisher'
 import { KafkaDomainEventPublisher } from 'src/messaging/kafka-domain-event.publisher'
-import { PaymentConsumerHandler } from 'src/payment-consumer/payment-consumer.controller'
+import { PaymentConsumerHandler } from 'src/payment-consumer/payment-consumer.handler'
 import { WebhooksController } from 'src/webhooks/webhooks.controller'
 import { PaymentService } from './payment.service'
 

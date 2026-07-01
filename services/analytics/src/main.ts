@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { EXCHANGES } from '@eda/contracts'
 import { NestFactory } from '@nestjs/core'
 import { MicroserviceOptions, Transport } from '@nestjs/microservices'
 import {
@@ -26,6 +27,36 @@ async function bootstrap() {
 			},
 			consumer: { groupId: 'analytics-service' },
 			subscribe: { fromBeginning: false },
+		},
+	})
+
+	app.connectMicroservice<MicroserviceOptions>({
+		transport: Transport.RMQ,
+		options: {
+			urls: [requireEnv('RABBITMQ_URL')],
+			queue: 'notifications.email.delivered',
+			noAssert: true,
+			noAck: false,
+			prefetchCount: 1,
+			queueOptions: { durable: true },
+			wildcards: true,
+			exchange: EXCHANGES.COMMANDS,
+			exchangeType: 'topic',
+		},
+	})
+
+	app.connectMicroservice<MicroserviceOptions>({
+		transport: Transport.RMQ,
+		options: {
+			urls: [requireEnv('RABBITMQ_URL')],
+			queue: 'notifications.email.failed',
+			noAssert: true,
+			noAck: false,
+			prefetchCount: 1,
+			queueOptions: { durable: true },
+			wildcards: true,
+			exchange: EXCHANGES.COMMANDS,
+			exchangeType: 'topic',
 		},
 	})
 

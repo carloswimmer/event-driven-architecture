@@ -2983,7 +2983,7 @@ KAFKA_BROKERS=localhost:9094
 RABBITMQ_URL=amqp://eda_app:change-me-app-password@localhost:5672/eda
 ```
 
-- [ ] Scaffold modules (from **`services/analytics/`**):
+- [x] Scaffold modules (from **`services/analytics/`**):
 
 ```bash
 npx nest g module analytics --no-spec
@@ -3110,7 +3110,7 @@ export class KafkaEventsHandler {
 
 ### Step 8.4 — RabbitMQ handlers (thin)
 
-- [ ] Create `services/analytics/src/rabbitmq-events/rabbitmq-events.handler.ts`:
+- [x] Create `services/analytics/src/rabbitmq-events/rabbitmq-events.handler.ts`:
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
@@ -3148,7 +3148,7 @@ export class RabbitMqEventsHandler {
 
 ### Step 8.5 — Wire modules and hybrid main
 
-- [ ] Replace `services/analytics/src/analytics.module.ts`:
+- [x] Replace `services/analytics/src/analytics.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';
@@ -3186,7 +3186,7 @@ import { AnalyticsModule } from './analytics.module';
 export class AppModule {}
 ```
 
-- [ ] Replace `services/analytics/src/main.ts`:
+- [x] Replace `services/analytics/src/main.ts`:
 
 ```typescript
 import 'dotenv/config';
