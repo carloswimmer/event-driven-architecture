@@ -44,6 +44,46 @@
 			"arguments": {
 				"x-queue-type": "quorum"
 			}
+		},
+		{
+			"name": "notification.email.delivered",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum",
+				"x-dead-letter-exchange": "eda.dlx",
+				"x-dead-letter-routing-key": "notification.email.delivered.failed"
+			}
+		},
+		{
+			"name": "notification.email.delivered.dlq",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum"
+			}
+		},
+		{
+			"name": "notification.email.not.delivered",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum",
+				"x-dead-letter-exchange": "eda.dlx",
+				"x-dead-letter-routing-key": "notification.email.not.delivered.failed"
+			}
+		},
+		{
+			"name": "notification.email.not.delivered.dlq",
+			"vhost": "eda",
+			"durable": true,
+			"auto_delete": false,
+			"arguments": {
+				"x-queue-type": "quorum"
+			}
 		}
 	],
 	"bindings": [
@@ -61,6 +101,37 @@
 			"destination": "orders.payment.requested.dlq",
 			"destination_type": "queue",
 			"routing_key": "orders.payment.requested.failed",
+			"arguments": {}
+		},
+		{
+			"source": "eda.commands",
+			"vhost": "eda",
+			"destination": "notification.email.delivered",
+			"destination_type": "queue",
+			"routing_key": "notification.email.delivered",
+			"arguments": {}
+		},
+		{
+			"source": "eda.dlx",
+			"vhost": "eda",
+			"destination": "orders.payment.requested.dlq",
+			"destination_type": "queue",
+			"routing_key": "notification.email.delivered.failed"
+		},
+		{
+			"source": "eda.commands",
+			"vhost": "eda",
+			"destination": "notification.email.not.delivered",
+			"destination_type": "queue",
+			"routing_key": "notification.email.not.delivered",
+			"arguments": {}
+		},
+		{
+			"source": "eda.dlx",
+			"vhost": "eda",
+			"destination": "notification.email.not.delivered.dlq",
+			"destination_type": "queue",
+			"routing_key": "notification.email.not.delivered.failed",
 			"arguments": {}
 		}
 	]

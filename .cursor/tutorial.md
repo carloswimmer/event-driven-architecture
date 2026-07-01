@@ -1,5 +1,7 @@
 # Event-Driven Architecture — Manual Implementation Tutorial
 
+## Introduction
+
 > **Goal:** Build the full payment/order flow using NestJS + Fastify, `@nestjs/microservices`, RabbitMQ (point-to-point), and Kafka (pub/sub) — entirely by hand, one checkbox at a time. Mocks use a pnpm workspace (Phases 0–4); microservices are **standalone Nest projects** in one repo (Phases 5–10).
 
 **Stack:** Node.js 20+, TypeScript, NestJS with Fastify adapter, `@nestjs/microservices`, standalone Nest projects (Phases 5+), pnpm workspaces for mocks/contracts (Phases 0–4), mock Stripe/SendGrid.
@@ -179,7 +181,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml ps
 
 - [x] Open RabbitMQ Management UI: http://localhost:15672
 - [x] Login: `admin` / `change-me-admin-password` (or your `.env` values)
-- [ ] Confirm:
+- [x] Confirm:
   - Vhost **`eda`** exists
   - Exchange **`eda.commands`** (direct, durable)
   - Queue **`orders.payment.requested`** (quorum, with DLX → `eda.dlx`)
