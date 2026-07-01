@@ -4,7 +4,7 @@ import { EventPattern, Payload } from '@nestjs/microservices'
 import { IdempotencyStore } from 'src/common/idempotency.store'
 import { NotificationService } from 'src/notification/notification.service'
 
-@Controller('invoice-event')
+@Controller()
 export class InvoiceEventsHandler {
 	private readonly logger = new Logger(InvoiceEventsHandler.name)
 
@@ -19,6 +19,7 @@ export class InvoiceEventsHandler {
 
 		if (this.idempotency.isDuplicate(event.invoiceId)) {
 			this.logger.warn(`Duplicate billing.invoice.created: ${event.invoiceId}`)
+			return
 		}
 
 		await this.notificationService.sendInvoiceNotification(event)

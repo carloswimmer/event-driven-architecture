@@ -444,7 +444,7 @@ export const SendGridWebhookPayloadSchema = z.array(SendGridWebhookEventSchema);
 export type SendGridWebhookEvent = z.infer<typeof SendGridWebhookEventSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/events/email-delivered.ts`:
+- [x] Create `packages/contracts/src/events/email-delivered.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -459,7 +459,7 @@ export const EmailDeliveredSchema = z.object({
 export type EmailDelivered = z.infer<typeof EmailDeliveredSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/events/email-failed.ts`:
+- [x] Create `packages/contracts/src/events/email-failed.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -474,7 +474,7 @@ export const EmailFailedSchema = z.object({
 export type EmailFailed = z.infer<typeof EmailFailedSchema>;
 ```
 
-- [ ] Update `packages/contracts/src/index.ts`:
+- [x] Update `packages/contracts/src/index.ts`:
 
 ```typescript
 export * from './routing-keys';
@@ -487,7 +487,7 @@ export * from './events/email-delivered';
 export * from './events/email-failed';
 ```
 
-- [ ] Append to `infra/rabbitmq/definitions.json` → `queues`:
+- [x] Append to `infra/rabbitmq/definitions.json` → `queues`:
 
 ```json
 {
@@ -532,7 +532,7 @@ export * from './events/email-failed';
 }
 ```
 
-- [ ] Append to `infra/rabbitmq/definitions.json` → `bindings`:
+- [x] Append to `infra/rabbitmq/definitions.json` → `bindings`:
 
 ```json
 {
@@ -569,7 +569,7 @@ export * from './events/email-failed';
 }
 ```
 
-- [ ] Recreate RabbitMQ topology:
+- [x] Recreate RabbitMQ topology:
 
 ```bash
 docker compose up -d rabbitmq-init
@@ -3665,7 +3665,7 @@ export interface EmailGateway {
 }
 ```
 
-- [ ] Replace `services/notification/src/gateways/sendgrid-email.gateway.ts`:
+- [x] Replace `services/notification/src/gateways/sendgrid-email.gateway.ts`:
 
 ```typescript
 import { Injectable, Logger } from '@nestjs/common';
@@ -3714,7 +3714,7 @@ export class SendGridEmailGateway implements EmailGateway {
 
 ### Step 10.3 — Analytics command publisher port
 
-- [ ] Create `services/notification/src/messaging/analytics-command.publisher.ts`:
+- [x] Create `services/notification/src/messaging/analytics-command.publisher.ts`:
 
 ```typescript
 import { EmailDelivered, EmailFailed } from '@eda/contracts';
@@ -3727,7 +3727,7 @@ export interface AnalyticsCommandPublisher {
 }
 ```
 
-- [ ] Create `services/notification/src/messaging/rabbitmq-analytics-command.publisher.ts`:
+- [x] Create `services/notification/src/messaging/rabbitmq-analytics-command.publisher.ts`:
 
 ```typescript
 import {
@@ -3768,7 +3768,7 @@ export class RabbitMqAnalyticsCommandPublisher
 
 ### Step 10.4 — Notification service
 
-- [ ] Replace `services/notification/src/notification/notification.service.ts`:
+- [x] Replace `services/notification/src/notification/notification.service.ts`:
 
 ```typescript
 import {
@@ -3843,7 +3843,7 @@ export class NotificationService {
 
 ### Step 10.5 — SendGrid webhook controller (thin)
 
-- [ ] Replace `services/notification/src/webhooks/webhooks.controller.ts`:
+- [x] Replace `services/notification/src/webhooks/webhooks.controller.ts`:
 
 ```typescript
 import { SendGridWebhookPayloadSchema } from '@eda/contracts';
