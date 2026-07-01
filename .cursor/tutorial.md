@@ -348,7 +348,7 @@ export const EXCHANGES = {
 } as const;
 ```
 
-- [ ] Append to `packages/contracts/src/routing-keys.ts` → `ROUTING_KEYS`:
+- [x] Append to `packages/contracts/src/routing-keys.ts` → `ROUTING_KEYS`:
 
 ```typescript
 EMAIL_DELIVERED: 'notifications.email.delivered',
@@ -414,7 +414,7 @@ export const InvoiceCreatedSchema = z.object({
 export type InvoiceCreated = z.infer<typeof InvoiceCreatedSchema>;
 ```
 
-- [ ] Create `packages/contracts/src/events/sendgrid-webhook.ts`:
+- [x] Create `packages/contracts/src/events/sendgrid-webhook.ts`:
 
 ```typescript
 import { z } from 'zod';
@@ -1210,14 +1210,14 @@ git commit -m "feat: add mock Stripe service with webhook simulation"
 
 ### Step 4.2 — SendGrid mock implementation
 
-- [ ] Create `mocks/sendgrid-mock/.env`:
+- [x] Create `mocks/sendgrid-mock/.env`:
 
 ```bash
 PORT=3002
 NOTIFICATION_WEBHOOK_URL=http://localhost:3050/webhooks/sendgrid
 ```
 
-- [ ] Create `mocks/sendgrid-mock/src/mail.types.ts`:
+- [x] Create `mocks/sendgrid-mock/src/mail.types.ts`:
 
 ```typescript
 export interface SendMailRequestDto {
@@ -1229,7 +1229,7 @@ export interface SendMailRequestDto {
 }
 ```
 
-- [ ] Replace `mocks/sendgrid-mock/src/mail.controller.ts`:
+- [x] Replace `mocks/sendgrid-mock/src/mail.controller.ts`:
 
 ```typescript
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
@@ -1248,7 +1248,7 @@ export class MailController {
 }
 ```
 
-- [ ] Replace `mocks/sendgrid-mock/src/mail.service.ts`:
+- [x] Replace `mocks/sendgrid-mock/src/mail.service.ts`:
 
 ```typescript
 import { randomUUID } from 'node:crypto';
