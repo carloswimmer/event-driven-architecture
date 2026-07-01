@@ -3,7 +3,7 @@ import z from 'zod'
 export const SendGridWebhookEventSchema = z.object({
 	event: z.enum([
 		'processed',
-		'deliverd',
+		'delivered',
 		'bounce',
 		'dropped',
 		'deferred',

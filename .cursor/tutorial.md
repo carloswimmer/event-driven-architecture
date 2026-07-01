@@ -3903,7 +3903,7 @@ export class InvoiceEventsHandler {
 
 ### Step 10.7 — Wire modules and hybrid main
 
-- [ ] Replace `services/notification/src/notification/notification.module.ts`:
+- [x] Replace `services/notification/src/notification/notification.module.ts`:
 
 ```typescript
 import { EXCHANGES } from '@eda/contracts';
@@ -3954,7 +3954,7 @@ const rabbitmqRegister = ClientsModule.register([
 export class NotificationModule {}
 ```
 
-- [ ] Replace `services/notification/src/app.module.ts`:
+- [x] Replace `services/notification/src/app.module.ts`:
 
 ```typescript
 import { Module } from '@nestjs/common';

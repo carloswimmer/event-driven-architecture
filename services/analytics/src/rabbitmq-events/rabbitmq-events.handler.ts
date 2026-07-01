@@ -4,7 +4,13 @@ import {
 	ROUTING_KEYS,
 } from '@eda/contracts'
 import { Controller, Logger } from '@nestjs/common'
-import { Ctx, EventPattern, Payload, RmqContext } from '@nestjs/microservices'
+import {
+	Ctx,
+	EventPattern,
+	Payload,
+	RmqContext,
+	Transport,
+} from '@nestjs/microservices'
 import { IdempotencyStore } from 'src/common/idempotency.store'
 import { EventsService } from 'src/events/events.service'
 
@@ -17,7 +23,7 @@ export class RabbitMqEventsHandler {
 		private readonly eventsService: EventsService,
 	) {}
 
-	@EventPattern(ROUTING_KEYS.EMAIL_DELIVERED)
+	@EventPattern(ROUTING_KEYS.EMAIL_DELIVERED, Transport.RMQ)
 	handleEmailDelivered(
 		@Payload() payload: unknown,
 		@Ctx() context: RmqContext,
@@ -34,10 +40,11 @@ export class RabbitMqEventsHandler {
 			return
 		}
 
-		this.eventsService.record('notification.email.delivered', event)
+		this.logger.log(`Recorded notifications.email.delivered: ${event.email}`)
+		this.eventsService.record('notifications.email.delivered', event)
 	}
 
-	@EventPattern(ROUTING_KEYS.EMAIL_FAILED)
+	@EventPattern(ROUTING_KEYS.EMAIL_FAILED, Transport.RMQ)
 	handleEmailFailed(@Payload() payload: unknown, @Ctx() context: RmqContext) {
 		const channel = context.getChannelRef()
 		const msg = context.getMessage()
@@ -45,12 +52,15 @@ export class RabbitMqEventsHandler {
 
 		if (this.idempotency.isDuplicate(event.orderNumber)) {
 			this.logger.warn(
-				`Duplicate notification.email.failed for invoice ${event.invoiceId}`,
+				`Duplicate notifications.email.not.delivered for invoice ${event.invoiceId}`,
 			)
 			channel.ack(msg)
 			return
 		}
 
-		this.eventsService.record('notification.email.failed', event)
+		this.logger.log(
+			`Recorded notifications.email.not.delivered: ${event.email}`,
+		)
+		this.eventsService.record('notifications.email.not.delivered', event)
 	}
 }

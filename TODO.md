@@ -21,3 +21,8 @@
 ## Requisites
 
 - [ ] Filter list events from analytics by date range
+
+## Others
+
+- [ ] Check idempotency in AnalyticsService
+- [ ] Fix "not.delivered" be sent to DLQ

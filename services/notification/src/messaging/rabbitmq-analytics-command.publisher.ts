@@ -14,18 +14,24 @@ export class RabbitMqAnalyticsCommandPublisher
 	implements AnalyticsCommandPublisher
 {
 	constructor(
-		@Inject('RABBITMQ_COMMANDS') private readonly client: ClientProxy,
+		@Inject('RABBITMQ_EMAIL_DELIVERED')
+		private readonly deliveredClient: ClientProxy,
+		@Inject('RABBITMQ_EMAIL_FAILED') private readonly failedClient: ClientProxy,
 	) {}
 
 	async publishEmailDelivered(payload: EmailDelivered): Promise<void> {
 		const event = EmailDeliveredSchema.parse(payload)
 
-		await firstValueFrom(this.client.emit(ROUTING_KEYS.EMAIL_DELIVERED, event))
+		await firstValueFrom(
+			this.deliveredClient.emit(ROUTING_KEYS.EMAIL_DELIVERED, event),
+		)
 	}
 
 	async publishEmailFailed(payload: EmailFailed): Promise<void> {
 		const event = EmailFailedSchema.parse(payload)
 
-		await firstValueFrom(this.client.emit(ROUTING_KEYS.EMAIL_FAILED, event))
+		await firstValueFrom(
+			this.failedClient.emit(ROUTING_KEYS.EMAIL_FAILED, event),
+		)
 	}
 }

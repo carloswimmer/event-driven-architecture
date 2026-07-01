@@ -49,7 +49,7 @@ async function bootstrap() {
 		transport: Transport.RMQ,
 		options: {
 			urls: [requireEnv('RABBITMQ_URL')],
-			queue: 'notifications.email.failed',
+			queue: 'notifications.email.not.delivered',
 			noAssert: true,
 			noAck: false,
 			prefetchCount: 1,
@@ -60,7 +60,7 @@ async function bootstrap() {
 		},
 	})
 
-	app.startAllMicroservices()
+	await app.startAllMicroservices()
 	const port = Number(process.env.PORT ?? 3030)
 	await app.listen(port, '0.0.0.0')
 	console.log(`📈 analytics-service listening on ${port}`)

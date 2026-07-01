@@ -131,6 +131,9 @@ importers:
       '@nestjs/platform-fastify':
         specifier: ^10.4.15
         version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)
+      amqplib:
+        specifier: ^0.10.5
+        version: 0.10.9
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -162,6 +165,9 @@ importers:
       '@nestjs/testing':
         specifier: ^10.0.0
         version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@nestjs/microservices@10.4.22)(@nestjs/platform-express@10.4.22)
+      '@types/amqplib':
+        specifier: ^0.10.6
+        version: 0.10.8
       '@types/express':
         specifier: ^5.0.0
         version: 5.0.6

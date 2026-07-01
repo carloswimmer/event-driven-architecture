@@ -46,7 +46,7 @@ export class NotificationService {
 			throw new Error('SendGrid webhook is missing invoiceId or orderNumber')
 		}
 
-		if (event === 'deliverd') {
+		if (event === 'delivered') {
 			const payload = EmailDeliveredSchema.parse({
 				invoiceId,
 				orderNumber,
@@ -54,6 +54,7 @@ export class NotificationService {
 				sgMessageId: sg_message_id,
 			})
 
+			this.logger.log(`SendGrid delivered: ${email}`)
 			await this.analyticsCommands.publishEmailDelivered(payload)
 
 			return
@@ -67,6 +68,7 @@ export class NotificationService {
 				reason: reason ?? event,
 			})
 
+			this.logger.log(`SendGrid bounce: ${email}`)
 			await this.analyticsCommands.publishEmailFailed(payload)
 		}
 	}

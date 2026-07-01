@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { IdempotencyStore } from 'src/common/idempotency.store'
 import { EventsController } from 'src/events/events.controller'
 import { EVENTS_REPOSITORY } from 'src/events/events.repository'
 import { EventsService } from 'src/events/events.service'
@@ -9,6 +10,7 @@ import { RabbitMqEventsHandler } from 'src/rabbitmq-events/rabbitmq-events.handl
 @Module({
 	controllers: [EventsController, KafkaEventsHandler, RabbitMqEventsHandler],
 	providers: [
+		IdempotencyStore,
 		EventsService,
 		{ provide: EVENTS_REPOSITORY, useClass: InMemoryEventsRepository },
 	],
